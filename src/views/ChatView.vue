@@ -2,50 +2,39 @@
   <div class="chat-view">
     <div class="header">
       <div class="model-info">
-        <ModelSelect
-          v-model="selectedModel"
-          :options="store.availableModels"
-        />
+        <div v-if="store.isModelsLoading" class="loading-models">Загрузка моделей...</div>
+        <ModelSelect v-else v-model="selectedModel" :options="store.availableModels" />
         <span v-if="store.isLoading" class="status-dot thinking">• думает…</span>
         <span v-else class="status-dot ready">• готов</span>
       </div>
 
-      <button @click="checkConnection" class="test-btn">
-        🔌 Проверить API
-      </button>
+      <button @click="checkConnection" class="test-btn">🔌 Проверить API</button>
     </div>
 
     <div class="messages-container" ref="messagesContainer">
-      <ChatMessage
-        v-for="(msg, idx) in displayMessages"
-        :key="idx"
-        :message="msg"
-      />
+      <ChatMessage v-for="(msg, idx) in displayMessages" :key="idx" :message="msg" />
 
       <div v-if="store.isLoading" class="loading-indicator">
-        <div class="dots">
-          <span></span><span></span><span></span>
-        </div>
+        <div class="dots"><span></span><span></span><span></span></div>
         <span v-if="displayMessages.length === 0">🤔 Думаю над первым ответом…</span>
         <span v-else>печатает…</span>
       </div>
     </div>
 
-    <ChatInput
-      :disabled="store.isLoading"
-      @send="handleSend"
-    />
+    <ChatInput :disabled="store.isLoading" @send="handleSend" />
 
     <div class="controls">
-      <button class="clear-btn" @click="clearChat">
-        🗑️ Очистить чат
+      <button class="clear-btn" @click="clearChat">🗑️ Очистить чат</button>
+      <!-- кнопка обновления списка (опционально) -->
+      <button v-if="!store.isModelsLoading" @click="store.loadAvailableModels(true)">
+        🔄 Обновить модели
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue'  // ← здесь добавлен onMounted!
+import { ref, computed, watch, nextTick, onMounted } from 'vue' // ← здесь добавлен onMounted!
 import { useChatStore } from '@/stores/chat'
 import ChatMessage from '@/components/ChatMessage.vue'
 import ChatInput from '@/components/ChatInput.vue'
@@ -63,9 +52,7 @@ const selectedModel = computed({
   },
 })
 
-const displayMessages = computed(() =>
-  store.messages.filter((m) => m.role !== 'system')
-)
+const displayMessages = computed(() => store.messages.filter((m) => m.role !== 'system'))
 
 const isLoading = computed(() => store.isLoading)
 
@@ -82,7 +69,7 @@ const checkConnection = async () => {
   alert(
     isConnected
       ? '✅ API подключение успешно!'
-      : '❌ Ошибка подключения. Проверьте ключ и настройки шлюза.'
+      : '❌ Ошибка подключения. Проверьте ключ и настройки шлюза.',
   )
 }
 
@@ -93,7 +80,7 @@ watch(
     await nextTick()
     scrollToBottom()
   },
-  { deep: true }
+  { deep: true },
 )
 
 watch(
@@ -102,7 +89,7 @@ watch(
     if (newVal) {
       nextTick(scrollToBottom)
     }
-  }
+  },
 )
 
 const scrollToBottom = () => {
@@ -194,6 +181,12 @@ onMounted(() => {
   opacity: 0.8;
 }
 
+.loading-models {
+  padding: 6px 12px;
+  color: #666;
+  font-size: 14px;
+}
+
 .dots {
   display: flex;
   gap: 6px;
@@ -207,12 +200,22 @@ onMounted(() => {
   animation: bounce 1.4s infinite ease-in-out both;
 }
 
-.dots span:nth-child(1) { animation-delay: -0.32s; }
-.dots span:nth-child(2) { animation-delay: -0.16s; }
+.dots span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+.dots span:nth-child(2) {
+  animation-delay: -0.16s;
+}
 
 @keyframes bounce {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1); }
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
 }
 
 .controls {

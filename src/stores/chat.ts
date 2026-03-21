@@ -17,24 +17,19 @@ export const useChatStore = defineStore('chat', () => {
   ])
 
   const isLoading = ref(false)
+  const isModelsLoading = ref(true) // новый флаг — пока модели не загрузились
   const selectedModel = ref<string>('')
   const error = ref<string | null>(null)
-  const availableModels = ref<ModelOption[]>([
-    // Актуальный список на март 2026 (основные рабочие модели Groq)
-    { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile — мощная, универсальная' },
-    { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant — очень быстрая' },
-    { value: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B — быстрая open-weight' },
-    { value: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B — самая мощная open-weight' },
-    {
-      value: 'meta-llama/llama-4-scout-17b-16e-instruct',
-      label: 'Llama 4 Scout 17B Instruct — новая',
-    },
-    { value: 'gemma2-9b-it', label: 'Gemma 2 9B Instruct — компактная и умная' },
-    { value: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B — хороший баланс скорости/качества' },
-  ])
+  const availableModels = ref<ModelOption[]>([])
+  const modelsLoaded = ref(false) // чтобы не грузить повторно
 
-  // Загрузка актуального списка моделей при старте
-  async function loadAvailableModels() {
+  // Загрузка списка моделей
+  async function loadAvailableModels(force = false) {
+    if (modelsLoaded.value && !force) return // уже загружено — не повторяем
+
+    isModelsLoading.value = true
+    error.value = null
+
     try {
       const res = await fetch('/api/groq/models', {
         headers: {
@@ -44,73 +39,94 @@ export const useChatStore = defineStore('chat', () => {
       })
 
       if (!res.ok) {
-        throw new Error(`Failed to fetch models: ${res.status}`)
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`)
       }
 
       const data = await res.json()
-      const modelIds = data.data?.map((m: any) => m.id) || []
+      const modelIds: string[] = data.data?.map((m: any) => m.id) || []
 
-      if (modelIds.length > 0) {
-        availableModels.value = modelIds.map((id: string) => ({
-          value: id,
-          label:
-            id
-              .replace(/^.*\//, '') // убираем префиксы типа meta-llama/
-              .replace(/-/g, ' ')
-              .replace(/\b\w/g, (c) => c.toUpperCase()) + ' — auto',
-        }))
+      console.log(`Получено моделей от Groq: ${modelIds.length}`)
+      console.log('Список моделей:', modelIds)
 
-        // Сортируем примерно по мощности/популярности (очень грубо)
-        availableModels.value.sort((a, b) => {
-          if (a.value.includes('120b')) return -1
-          if (b.value.includes('120b')) return 1
-          if (a.value.includes('70b')) return -1
-          if (b.value.includes('70b')) return 1
-          return 0
-        })
-
-        console.log('Загружены реальные модели с Groq:', availableModels.value)
+      if (modelIds.length === 0) {
+        throw new Error('API вернул пустой список моделей')
       }
-    } catch (err) {
-      console.warn('Не удалось загрузить список моделей с Groq → используем fallback', err)
-      // fallback уже задан в ref выше
+
+      // Формируем красивые метки
+      availableModels.value = modelIds.map((id: string) => {
+        let cleanName = id.replace(/^[^/]+\//, '')
+        let label = cleanName.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+
+        if (id.includes('70b')) label += ' — 70B (мощная)'
+        else if (id.includes('8b') || id.includes('9b')) label += ' — 8–9B (быстрая)'
+        else if (id.includes('120b')) label += ' — 120B (очень мощная)'
+        else if (id.includes('scout')) label += ' — Scout (новая)'
+        else label += ' — Groq'
+
+        return { value: id, label }
+      })
+
+      // Сортировка по размеру (примерно)
+      availableModels.value.sort((a, b) => {
+        const getSize = (s: string) => {
+          if (s.includes('120b')) return 120
+          if (s.includes('70b')) return 70
+          if (s.includes('32b') || s.includes('scout')) return 32
+          if (s.includes('8b') || s.includes('9b')) return 9
+          return 0
+        }
+        return getSize(b.value) - getSize(a.value)
+      })
+
+      modelsLoaded.value = true
+      console.log('Список моделей готов для UI:', availableModels.value)
+    } catch (err: any) {
+      console.error('Ошибка загрузки моделей:', err)
+      error.value = 'Не удалось загрузить список моделей. Проверьте ключ API и интернет.'
+
+      // Минимальный fallback — хотя бы одна рабочая модель
+      availableModels.value = [
+        { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile (резервная)' },
+      ]
     } finally {
-      // Устанавливаем первую модель по умолчанию, если ещё не выбрана
+      isModelsLoading.value = false
+
+      // Автовыбор первой модели, если ещё не выбрана
       if (!selectedModel.value && availableModels.value.length > 0) {
         selectedModel.value = availableModels.value[0].value
       }
     }
   }
 
-  // Инициализация при монтировании стора
+  // Инициализация
   onMounted(() => {
     loadAvailableModels()
   })
 
-  // Добавить сообщение пользователя
+  // ────────────────────────────────────────────────
+  // Функции чата
+  // ────────────────────────────────────────────────
+
   function addUserMessage(content: string) {
     messages.value.push({ role: 'user', content })
   }
 
-  // Добавить ответ ассистента
   function addAssistantMessage(content: string) {
     messages.value.push({ role: 'assistant', content })
   }
 
-  // Обновить последнее сообщение (для стриминга)
   function updateLastMessage(content: string) {
-    const lastMessage = messages.value[messages.value.length - 1]
-    if (lastMessage && lastMessage.role === 'assistant') {
-      lastMessage.content = content
+    const last = messages.value[messages.value.length - 1]
+    if (last && last.role === 'assistant') {
+      last.content = content
     }
   }
 
-  // Отправить сообщение
   async function sendMessage(userInput: string) {
     if (!userInput.trim() || isLoading.value || !selectedModel.value) return
 
     addUserMessage(userInput)
-    addAssistantMessage('') // placeholder для стриминга
+    addAssistantMessage('') // placeholder
 
     isLoading.value = true
     error.value = null
@@ -118,7 +134,6 @@ export const useChatStore = defineStore('chat', () => {
     let accumulated = ''
 
     try {
-      // Фильтруем историю, исключая system prompt (он уже в запросе отдельно)
       const historyForAPI = messages.value.filter((m) => m.role !== 'system')
 
       await sendMessageStream(historyForAPI, selectedModel.value, (chunk) => {
@@ -126,19 +141,22 @@ export const useChatStore = defineStore('chat', () => {
         updateLastMessage(accumulated)
       })
 
-      // Успешное завершение — можно добавить маркер или логику
+      console.log('Стрим успешно завершён')
     } catch (err: any) {
-      console.error('Ошибка генерации:', err)
-      error.value = err.message || 'Ошибка во время генерации ответа'
+      console.error('Ошибка при генерации ответа:', err)
+      error.value = err.message || 'Ошибка генерации ответа. Попробуйте снова.'
       updateLastMessage(
         accumulated + '\n\n(ответ прерван: ' + (err.message || 'неизвестная ошибка') + ')',
       )
     } finally {
-      isLoading.value = false
+      // Небольшая задержка — чтобы Vue успел отрендерить последний чанк
+      setTimeout(() => {
+        isLoading.value = false
+        console.log('isLoading сброшен')
+      }, 300)
     }
   }
 
-  // Очистить историю чата
   function clearChat() {
     messages.value = [
       {
@@ -151,11 +169,13 @@ export const useChatStore = defineStore('chat', () => {
   return {
     messages,
     isLoading,
+    isModelsLoading, // можно использовать в UI для показа лоадера при выборе модели
     selectedModel,
     error,
-    availableModels, // ← теперь экспортируем, чтобы компонент мог использовать
+    availableModels,
     sendMessage,
     clearChat,
     updateLastMessage,
+    loadAvailableModels, // для кнопки "Обновить список моделей"
   }
 })
