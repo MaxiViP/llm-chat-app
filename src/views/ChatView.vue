@@ -1,7 +1,7 @@
 <template>
   <div class="chat-view flex flex-col h-screen bg-gray-50">
     <!-- Header -->
-    <div class="header flex justify-between items-center p-1 bg-white border-b shadow-sm w-full">
+    <div class="header flex justify-between items-center p-4 bg-white border-b shadow-sm">
       <div class="flex items-center gap-3">
         <div v-if="store.isModelsLoading" class="text-gray-500 text-sm">Загрузка моделей...</div>
         <ModelSelect v-else />
@@ -23,12 +23,13 @@
           to="/profile"
           class="flex items-center gap-2 hover:bg-gray-100 rounded-full p-2 transition-colors"
         >
-          <div class="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-600">
+          <div
+            class="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-600"
+          >
             {{ authStore.user?.name?.charAt(0).toUpperCase() || '👤' }}
           </div>
           <span class="hidden sm:inline text-sm text-gray-700">{{ authStore.user?.name }}</span>
         </RouterLink>
-
       </div>
     </div>
 
@@ -156,6 +157,10 @@ onUnmounted(() => {
 <style scoped>
 .header {
   background-color: white;
+  width: 100%;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 /* Анимации */

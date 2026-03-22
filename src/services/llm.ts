@@ -1,8 +1,5 @@
 import axios from 'axios'
 
-/* -------------------------------------------------------------------------- *
- *  Типы                                                                      *
- * -------------------------------------------------------------------------- */
 export interface Message {
   role: 'user' | 'assistant' | 'system'
   content: string
@@ -33,9 +30,6 @@ interface LLMProvider {
   ): Promise<void>
 }
 
-/* -------------------------------------------------------------------------- *
- *  OpenAI‑совместимый провайдер                                               *
- * -------------------------------------------------------------------------- */
 class OpenAICompatibleProvider implements LLMProvider {
   readonly key: ProviderKey
   readonly displayName: string
@@ -44,7 +38,6 @@ class OpenAICompatibleProvider implements LLMProvider {
   private keyIndex = 0
   private modelCache: ModelOption[] = []
 
-  // Лимиты OpenRouter
   private remainingPerMinute = 20
   private remainingPerDay = 50
   private lastRequestTimestamp = 0
@@ -64,7 +57,6 @@ class OpenAICompatibleProvider implements LLMProvider {
     return key
   }
 
-  /** Получить текущие лимиты для UI */
   getLimits(): { perMinute: number; perDay: number } {
     const now = Date.now()
     if (now - this.lastRequestTimestamp > 60_000) this.remainingPerMinute = 20
@@ -75,7 +67,6 @@ class OpenAICompatibleProvider implements LLMProvider {
     return { perMinute: this.remainingPerMinute, perDay: this.remainingPerDay }
   }
 
-  /** Снять один запрос с лимита */
   private consumeLimit() {
     if (this.key === 'openrouter') {
       this.remainingPerMinute = Math.max(0, this.remainingPerMinute - 1)
@@ -120,20 +111,16 @@ class OpenAICompatibleProvider implements LLMProvider {
     if (this.key === 'openrouter') {
       const limits = this.getLimits()
       if (limits.perMinute <= 0 || limits.perDay <= 0) {
-        onChunk(
-          `(Лимиты исчерпаны: ${limits.perMinute} запросов/мин, ${limits.perDay} запросов/день)`,
+        throw new Error(
+          `Лимиты исчерпаны: ${limits.perMinute} запросов/мин, ${limits.perDay} запросов/день`,
         )
-        return
       }
-      onChunk(
-        `(Лимиты OpenRouter: ${limits.perMinute} запросов/мин, ${limits.perDay} запросов/день)`,
-      )
       this.consumeLimit()
     }
 
     const { temperature = 0.7, maxTokens } = options
     const finalMaxTokens =
-      this.key === 'openrouter' ? Math.min(maxTokens ?? 4096, 200) : (maxTokens ?? 8192)
+      this.key === 'openrouter' ? Math.min(maxTokens ?? 1024, 1500) : (maxTokens ?? 8192)
 
     const controller = new AbortController()
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -155,8 +142,7 @@ class OpenAICompatibleProvider implements LLMProvider {
     if (!res.ok) {
       const errText = await res.text()
       if (this.key === 'openrouter' && res.status === 402) {
-        onChunk(`(ответ прерван: ${errText.replace(/\n/g, ' ')})`)
-        return
+        throw new Error(`OpenRouter лимит токенов: ${errText}`)
       }
       throw new Error(`[${this.displayName}] ${res.status}: ${errText}`)
     }
@@ -189,9 +175,6 @@ class OpenAICompatibleProvider implements LLMProvider {
   }
 }
 
-/* -------------------------------------------------------------------------- *
- *  Инициализация провайдеров                                                  *
- * -------------------------------------------------------------------------- */
 const providers: Record<ProviderKey, OpenAICompatibleProvider> = {
   groq: new OpenAICompatibleProvider('groq', 'Groq', 'https://api.groq.com/openai/v1', [
     import.meta.env.VITE_GROQ_API_KEY,
@@ -215,23 +198,18 @@ export function getProvider(): OpenAICompatibleProvider {
   return providers[currentProvider]
 }
 
-/* -------------------------------------------------------------------------- *
- *  Получение лимитов для UI                                                   *
- * -------------------------------------------------------------------------- */
 export function getProviderLimits(provider?: ProviderKey): { perMinute: number; perDay: number } {
   const p = provider ? providers[provider] : getProvider()
   return p.key === 'openrouter' ? p.getLimits() : { perMinute: Infinity, perDay: Infinity }
 }
 
-/* -------------------------------------------------------------------------- *
- *  Остальной код (sendMessage, sendMessageStream, getAvailableModels…)       *
- * -------------------------------------------------------------------------- */
 type ModelAlias = 'fast' | 'smart' | 'code'
 const modelMap: Record<ModelAlias, Record<ProviderKey, string>> = {
   fast: { groq: 'llama-3.1-8b-instant', openrouter: 'qwen/qwen2.5-7b-instruct:free' },
   smart: { groq: 'llama-3.3-70b-versatile', openrouter: 'meta-llama/llama-3.3-70b-instruct:free' },
   code: { groq: 'deepseek-r1-distill-llama-70b', openrouter: 'mistralai/mistral-nemo:free' },
 }
+
 function resolveModel(model: string, provider: ProviderKey): string {
   const alias = modelMap[model as ModelAlias]
   if (alias) {
@@ -282,4 +260,156 @@ export async function getAvailableModels(provider?: ProviderKey): Promise<ModelO
   const models = await providers[key].getModels()
   availableModelsCache[key] = models
   return models
+}
+
+const DEFAULT_FALLBACK_MODELS = [
+  { provider: 'groq' as ProviderKey, model: 'llama-3.3-70b-versatile', name: 'Groq Llama 70B' },
+  { provider: 'groq' as ProviderKey, model: 'llama-3.1-8b-instant', name: 'Groq Llama 8B' },
+  {
+    provider: 'openrouter' as ProviderKey,
+    model: 'meta-llama/llama-3.3-70b-instruct:free',
+    name: 'OpenRouter Llama 70B',
+  },
+  {
+    provider: 'openrouter' as ProviderKey,
+    model: 'qwen/qwen2.5-7b-instruct:free',
+    name: 'OpenRouter Qwen 7B',
+  },
+  {
+    provider: 'openrouter' as ProviderKey,
+    model: 'mistralai/mistral-nemo:free',
+    name: 'OpenRouter Mistral Nemo',
+  },
+]
+
+export function isResponseValid(content: string, minLength: number = 10): boolean {
+  if (!content || content.trim().length === 0) return false
+  if (content.trim().length < minLength) return false
+
+  const trimmed = content.trim().toLowerCase()
+  const invalidResponses = [
+    '...',
+    '😊',
+    '👍',
+    '👌',
+    '✅',
+    '❌',
+    '🙂',
+    ':)',
+    ':(',
+    ';)',
+    'да',
+    'нет',
+    'ок',
+    'ok',
+    'хорошо',
+    'плохо',
+    'норм',
+  ]
+
+  if (invalidResponses.includes(trimmed)) return false
+
+  return true
+}
+
+export function getFallbackResponse(userInput: string): string {
+  const responses = [
+    `Извините, сервис временно недоступен. Попробуйте позже. Ваш запрос: "${userInput.slice(0, 50)}${userInput.length > 50 ? '...' : ''}"`,
+    `К сожалению, не удалось обработать запрос. Пожалуйста, переформулируйте вопрос.`,
+    `Технические неполадки. Наши инженеры уже работают над исправлением.`,
+    `Не могу ответить сейчас. Попробуйте позже или задайте другой вопрос.`,
+  ]
+  return responses[Math.floor(Math.random() * responses.length)]
+}
+
+export async function sendMessageWithGuaranteedResponse(
+  messages: Message[],
+  onChunk: (chunk: string) => void,
+  options: {
+    minLength?: number
+    maxAttempts?: number
+    models?: Array<{ provider: ProviderKey; model: string; name: string }>
+  } = {},
+): Promise<string> {
+  const { minLength = 10, maxAttempts = 5, models = DEFAULT_FALLBACK_MODELS } = options
+
+  let lastError: any = null
+  let currentAttempt = 0
+
+  for (const modelConfig of models) {
+    if (currentAttempt >= maxAttempts) break
+    currentAttempt++
+
+    try {
+      console.log(`🚀 Попытка ${currentAttempt}/${maxAttempts}: ${modelConfig.name}`)
+
+      let response = ''
+
+      const originalProvider = currentProvider
+      setProvider(modelConfig.provider)
+
+      await sendMessageStream(messages, modelConfig.model, (chunk) => {
+        response += chunk
+        onChunk(chunk)
+      })
+
+      if (isResponseValid(response, minLength)) {
+        console.log(`✅ Успешный ответ от ${modelConfig.name}, длина: ${response.length}`)
+        return response
+      } else {
+        console.warn(
+          `⚠️ Ответ от ${modelConfig.name} слишком короткий (${response?.length || 0} символов)`,
+        )
+        onChunk('')
+        lastError = new Error('Пустой или слишком короткий ответ')
+      }
+    } catch (err) {
+      console.warn(`❌ Ошибка при запросе к ${modelConfig.name}:`, err)
+      lastError = err
+      onChunk('')
+    }
+  }
+
+  throw lastError || new Error('Не удалось получить качественный ответ ни от одной модели')
+}
+
+export async function sendMessageStreamWithFallback(
+  messages: Message[],
+  onChunk: (chunk: string, metadata?: { model?: string; attempt?: number }) => void,
+  options: {
+    minLength?: number
+    models?: Array<{ provider: ProviderKey; model: string; name: string }>
+  } = {},
+): Promise<void> {
+  const { minLength = 10, models = DEFAULT_FALLBACK_MODELS } = options
+
+  let lastError: any = null
+
+  for (let i = 0; i < models.length; i++) {
+    const modelConfig = models[i]
+    try {
+      let response = ''
+
+      const originalProvider = currentProvider
+      setProvider(modelConfig.provider)
+
+      await sendMessageStream(messages, modelConfig.model, (chunk) => {
+        response += chunk
+        onChunk(chunk, { model: modelConfig.name, attempt: i + 1 })
+      })
+
+      if (isResponseValid(response, minLength)) {
+        console.log(`✅ Успешный стриминг от ${modelConfig.name}`)
+        return
+      }
+
+      console.warn(`⚠️ Ответ от ${modelConfig.name} слишком короткий, пробуем дальше...`)
+      lastError = new Error('Пустой или слишком короткий ответ')
+    } catch (err) {
+      console.warn(`❌ Ошибка при запросе к ${modelConfig.name}:`, err)
+      lastError = err
+    }
+  }
+
+  throw lastError || new Error('Не удалось получить ответ')
 }

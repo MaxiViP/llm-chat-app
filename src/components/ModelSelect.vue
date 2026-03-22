@@ -1,5 +1,5 @@
 <template>
-  <div class="model-select p-3 bg-gray-50 border-b border-gray-200 flex flex-col gap-2">
+  <div class="model-select p-1 bg-gray-50 border-b border-gray-200 flex flex-col gap-2">
     <div class="flex justify-between items-center">
       <label class="font-medium text-gray-700">Провайдер и модель:</label>
 
