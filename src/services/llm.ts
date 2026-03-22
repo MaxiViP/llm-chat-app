@@ -1,145 +1,147 @@
-import axios from 'axios'
+/* ────────────────────────────────────────────────────────────────────────── *
+ *  LLM‑провайдеры с поддержкой OpenAI‑совместимых API (Groq, OpenRouter)   *
+ *  --------------------------------------------------------------- *
+ *  • строгая типизация (Message, ModelOption, ProviderKey, …)            *
+ *  • ротация API‑ключей, health‑check, кеширование списка моделей       *
+ *  • потоковый запрос с автоматическим fallback‑механизмом               *
+ *  • небольшие, но важные исправления (импорт axios, сравнение имён,      *
+ *    корректный maxTokens, очистка кэша и т.д.)                           *
+ * ────────────────────────────────────────────────────────────────────────── */
 
-/* -------------------------------------------------------------------------- */
-/*  Константы и типы                                                          */
-/* -------------------------------------------------------------------------- */
-export const API_BASE_URL = 'https://api.groq.com/openai/v1' // Groq API (стриминг работает)
+import axios from 'axios' // <-- работает при "esModuleInterop": true (рекомендовано)
 
+/* -------------------------------------------------------------------------- *
+ *  Типы                                                                      *
+ * -------------------------------------------------------------------------- */
 export interface Message {
   role: 'user' | 'assistant' | 'system'
   content: string
 }
 
-/** Описание модели для UI‑селекта */
 export interface ModelOption {
   value: string
   label: string
 }
 
-/** Доступные модели */
-export const availableModels: ModelOption[] = [
-  { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile — мощная' },
-  { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant — очень быстрая' },
-  { value: 'llama-3.1-70b-versatile', label: 'Llama 3.1 70B Versatile — классика' },
-  { value: 'gemma2-9b-it', label: 'Gemma 2 9B Instruct — компактная' },
-  { value: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B — хороший баланс' },
-  { value: 'deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 70B — сильная в коде' },
-]
+/** Ключи провайдеров, которые поддерживает приложение */
+export type ProviderKey = 'groq' | 'openrouter'
 
-/* -------------------------------------------------------------------------- */
-/*  Вспомогательные типы ответа от API                                        */
-/* -------------------------------------------------------------------------- */
-interface GroqModel {
-  id: string
-  object: string
-  owned_by: string
-  // …другие поля, которые могут быть нужны
+/** Возможные режимы (в текущей версии не используется, но оставлен для будущего) */
+export type Mode = 'auto' | 'fast' | 'smart' | 'code' | 'manual'
+
+/** Параметры, передаваемые в sendStream */
+export interface SendStreamOptions {
+  temperature?: number
+  maxTokens?: number
 }
 
-interface GroqModelListResponse {
-  data: GroqModel[]
-  object: string
+/** Общий интерфейс провайдера */
+interface LLMProvider {
+  /** Человекочитаемое имя (для логов / UI) */
+  readonly displayName: string
+  /** Ключ, совпадающий с ProviderKey */
+  readonly key: ProviderKey
+
+  /** Получить список доступных моделей */
+  getModels(): Promise<ModelOption[]>
+
+  /** Отправить сообщения в режиме streaming */
+  sendStream(
+    messages: Message[],
+    model: string,
+    onChunk: (chunk: string) => void,
+    options?: SendStreamOptions,
+  ): Promise<void>
 }
 
-interface GroqChatChoice {
-  index: number
-  message?: { role: string; content: string }
-  delta?: { role?: string; content?: string }
-  finish_reason?: string | null
-}
+/* -------------------------------------------------------------------------- *
+ *  OpenAI‑совместимый провайдер                                               *
+ * -------------------------------------------------------------------------- */
+class OpenAICompatibleProvider implements LLMProvider {
+  readonly key: ProviderKey
+  readonly displayName: string
+  private readonly baseUrl: string
+  private readonly apiKeys: string[]
+  private keyIndex = 0
+  private modelCache: ModelOption[] = []
 
-interface GroqChatCompletionResponse {
-  id: string
-  object: string
-  created: number
-  model: string
-  choices: GroqChatChoice[]
-  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Получение API‑ключа (Vite)                                                */
-/* -------------------------------------------------------------------------- */
-function getApiKey(): string {
-  const key = import.meta.env.VITE_GROQ_API_KEY
-  if (!key) {
-    throw new Error('VITE_GROQ_API_KEY не задан в переменных окружения')
+  constructor(key: ProviderKey, displayName: string, baseUrl: string, apiKeys: string[]) {
+    this.key = key
+    this.displayName = displayName
+    this.baseUrl = baseUrl
+    this.apiKeys = apiKeys.filter(Boolean) // отбрасываем пустые строки
+    if (!this.apiKeys.length) {
+      throw new Error(`${displayName}: нет API‑ключей`)
+    }
   }
-  return key
-}
 
-/* -------------------------------------------------------------------------- */
-/*  Тест соединения                                                            */
-/* -------------------------------------------------------------------------- */
-export async function testConnection(): Promise<boolean> {
-  try {
-    const res = await axios.get<GroqModelListResponse>(`${API_BASE_URL}/models`, {
-      headers: { Authorization: `Bearer ${getApiKey()}` },
-    })
-    console.log('Доступно моделей:', res.data?.data?.length ?? 0)
-    return res.status === 200
-  } catch (e) {
-    console.error('Тест соединения провален:', e)
-    return false
+  /** Возвращает текущий ключ и переключает указатель (round‑robin) */
+  private getApiKey(): string {
+    const key = this.apiKeys[this.keyIndex]
+    this.keyIndex = (this.keyIndex + 1) % this.apiKeys.length
+    return key
   }
-}
 
-/* -------------------------------------------------------------------------- */
-/*  Обычный запрос (без стриминга)                                            */
-/* -------------------------------------------------------------------------- */
-export async function sendMessage(
-  messages: Message[],
-  model: string,
-  temperature = 0.7,
-  maxTokens = 2000,
-): Promise<string> {
-  const payload = { model, messages, temperature, max_tokens: maxTokens }
-
-  const res = await axios.post<GroqChatCompletionResponse>(
-    `${API_BASE_URL}/chat/completions`,
-    payload,
-    {
-      headers: { Authorization: `Bearer ${getApiKey()}` },
-    },
-  )
-
-  const content = res.data?.choices?.[0]?.message?.content
-  if (!content) {
-    throw new Error('Ответ от API не содержит текста')
+  /* ------------------------------ health‑check ------------------------------ */
+  async healthCheck(): Promise<boolean> {
+    try {
+      const res = await axios.get(`${this.baseUrl}/models`, {
+        headers: { Authorization: `Bearer ${this.getApiKey()}` },
+        timeout: 3000,
+      })
+      return res.status === 200
+    } catch {
+      return false
+    }
   }
-  return content
-}
 
-/* -------------------------------------------------------------------------- */
-/*  Стриминговый запрос                                                       */
-/* -------------------------------------------------------------------------- */
-export async function sendMessageStream(
-  messages: Message[],
-  model: string,
-  onChunk: (chunk: string) => void,
-  /** Параметры, которые часто меняются */
-  {
-    temperature = 0.7,
-    maxTokens = 4096,
-    /** Таймаут в миллисекундах (по умолчанию 5 мин) */
-    timeoutMs = 5 * 60 * 1000,
-  }: { temperature?: number; maxTokens?: number; timeoutMs?: number } = {},
-): Promise<void> {
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+  /* ------------------------------ модели ------------------------------ */
+  async getModels(): Promise<ModelOption[]> {
+    if (this.modelCache.length) return this.modelCache
 
-  try {
-    const res = await fetch(`${API_BASE_URL}/chat/completions`, {
+    try {
+      const res = await axios.get(`${this.baseUrl}/models`, {
+        headers: { Authorization: `Bearer ${this.getApiKey()}` },
+      })
+      // Ожидаемый ответ: { data: [{ id: string }, …] }
+      const data = (res.data as { data?: { id: string }[] }).data ?? []
+      this.modelCache = data.map((m) => ({
+        value: m.id,
+        label: m.id,
+      }))
+      return this.modelCache
+    } catch (e) {
+      console.warn(`[${this.displayName}] не удалось загрузить модели`, e)
+      return []
+    }
+  }
+
+  /* ------------------------------ streaming ------------------------------ */
+  async sendStream(
+    messages: Message[],
+    model: string,
+    onChunk: (chunk: string) => void,
+    options: SendStreamOptions = {},
+  ): Promise<void> {
+    const { temperature = 0.7, maxTokens } = options
+
+    // «Безопасный» лимит токенов для OpenRouter (бесплатный план)
+    const finalMaxTokens =
+      this.key === 'openrouter' ? Math.min(maxTokens ?? 4096, 200) : (maxTokens ?? 8192)
+
+    const controller = new AbortController()
+
+    const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${getApiKey()}`,
+        Authorization: `Bearer ${this.getApiKey()}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model,
         messages,
         temperature,
-        max_tokens: maxTokens,
+        max_tokens: finalMaxTokens,
         stream: true,
       }),
       signal: controller.signal,
@@ -147,89 +149,175 @@ export async function sendMessageStream(
 
     if (!res.ok) {
       const errText = await res.text()
-      throw new Error(`HTTP ${res.status}: ${errText}`)
+
+      // 402 — недостаточно кредитов (только у OpenRouter)
+      if (this.key === 'openrouter' && res.status === 402) {
+        onChunk(`(ответ прерван: ${errText.replace(/\n/g, ' ')})`)
+        return
+      }
+
+      throw new Error(`[${this.displayName}] ${res.status}: ${errText}`)
     }
 
-    // Поток читаем построчно (каждая строка начинается с `data: `)
     const reader = res.body!.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
 
     while (true) {
       const { done, value } = await reader.read()
-      if (done) {
-        // Если после завершения чтения остался «незавершённый» кусок – обработаем его
-        if (buffer.trim()) processLine(buffer, onChunk)
-        break
-      }
+      if (done) break
 
       buffer += decoder.decode(value, { stream: true })
 
-      // Выделяем полные строки, оставляя «хвост» в буфере
       let newlineIdx: number
       while ((newlineIdx = buffer.indexOf('\n')) >= 0) {
-        const rawLine = buffer.slice(0, newlineIdx).trim()
-        buffer = buffer.slice(newlineIdx + 1) // оставляем остаток
+        const line = buffer.slice(0, newlineIdx).trim()
+        buffer = buffer.slice(newlineIdx + 1)
 
-        // Пустые строки в потоке могут встречаться – игнорируем
-        if (!rawLine) continue
+        if (!line.startsWith('data:')) continue
 
-        // Обрабатываем только строки с префиксом `data: `
-        if (rawLine.startsWith('data:')) {
-          processLine(rawLine, onChunk)
+        const payload = line.slice(5).trim()
+        if (payload === '[DONE]') return
+
+        try {
+          const json = JSON.parse(payload) as {
+            choices?: { delta?: { content?: string } }[]
+          }
+          const content = json.choices?.[0]?.delta?.content
+          if (content) onChunk(content)
+        } catch {
+          // Игнорируем некорректные строки (может быть «ping»‑сообщение)
         }
       }
     }
-  } catch (err) {
-    // Ошибки могут быть как сетевые, так и связанные с парсингом
-    console.error('Ошибка стриминга:', err)
-    throw err
-  } finally {
-    clearTimeout(timeoutId)
-    controller.abort()
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Внутренний парсер строки из потока                                         */
-/* -------------------------------------------------------------------------- */
-function processLine(line: string, onChunk: (c: string) => void): void {
-  // Формат: `data: {...json...}`  или `data: [DONE]`
-  const payload = line.replace(/^data:\s*/, '')
-
-  if (payload === '[DONE]') {
-    // Сервер закончил отправку – ничего больше не делаем
-    return
-  }
-
-  if (!payload) return // иногда приходит просто `data: ` без данных
-
-  try {
-    const json: GroqChatCompletionResponse = JSON.parse(payload)
-    const delta = json.choices?.[0]?.delta
-    const content = delta?.content ?? ''
-    if (content) onChunk(content)
-  } catch (e) {
-    // Если JSON «сломался», выводим в консоль и продолжаем работу
-    console.warn('Не удалось распарсить строку из потока:', payload, e)
-  }
+/* -------------------------------------------------------------------------- *
+ *  Инициализация провайдеров                                                  *
+ * -------------------------------------------------------------------------- */
+const providers: Record<ProviderKey, OpenAICompatibleProvider> = {
+  groq: new OpenAICompatibleProvider('groq', 'Groq', 'https://api.groq.com/openai/v1', [
+    import.meta.env.VITE_GROQ_API_KEY,
+  ]),
+  openrouter: new OpenAICompatibleProvider(
+    'openrouter',
+    'OpenRouter',
+    'https://openrouter.ai/api/v1',
+    [import.meta.env.VITE_OPENROUTER_API_KEY],
+  ),
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Пример использования (можно убрать в продакшн)                            */
-/* -------------------------------------------------------------------------- */
-// (async () => {
-//   const ok = await testConnection()
-//   console.log('Соединение OK?', ok)
+/* -------------------------------------------------------------------------- *
+ *  Управление текущим провайдером                                            *
+ * -------------------------------------------------------------------------- */
+let currentProvider: ProviderKey = 'groq'
 
-//   const msgs: Message[] = [{ role: 'user', content: 'Привет, как тебя зовут?' }]
-//   const model = availableModels[0].value
+export function setProvider(p: ProviderKey): void {
+  currentProvider = p
+  // При переключении провайдера сбрасываем кэш моделей, чтобы они
+  // заново подгрузились у нового бэкенда.
+  delete availableModelsCache[p]
+}
 
-//   // Обычный запрос
-//   const answer = await sendMessage(msgs, model)
-//   console.log('Ответ без стрима:', answer)
+export function getProvider(): OpenAICompatibleProvider {
+  return providers[currentProvider]
+}
 
-//   // Стриминг
-//   console.log('Ответ со стримом:')
-//   await sendMessageStream(msgs, model, chunk => process.stdout.write(chunk))
-// })()
+/* -------------------------------------------------------------------------- *
+ *  Маппинг алиасов → реальных моделей                                         *
+ * -------------------------------------------------------------------------- */
+type ModelAlias = 'fast' | 'smart' | 'code'
+
+const modelMap: Record<ModelAlias, Record<ProviderKey, string>> = {
+  fast: {
+    groq: 'llama-3.1-8b-instant',
+    openrouter: 'qwen/qwen2.5-7b-instruct:free',
+  },
+  smart: {
+    groq: 'llama-3.3-70b-versatile',
+    openrouter: 'meta-llama/llama-3.3-70b-instruct:free',
+  },
+  code: {
+    groq: 'deepseek-r1-distill-llama-70b',
+    openrouter: 'mistralai/mistral-nemo:free',
+  },
+}
+
+/**
+ * Преобразует алиас (`fast`, `smart`, `code`) в реальное имя модели
+ * для указанного провайдера. Если передано уже полное имя модели –
+ * возвращает его без изменений.
+ *
+ * @throws если алиас известен, но для текущего провайдера не задана модель.
+ */
+function resolveModel(model: string, provider: ProviderKey): string {
+  const alias = modelMap[model as ModelAlias]
+  if (alias) {
+    const resolved = alias[provider]
+    if (!resolved) {
+      throw new Error(`Алиас модели "${model}" не поддерживается провайдером "${provider}"`)
+    }
+    return resolved
+  }
+  return model
+}
+
+/* -------------------------------------------------------------------------- *
+ *  Порядок fallback‑провайдеров                                              *
+ * -------------------------------------------------------------------------- */
+const fallbackOrder: ProviderKey[] = ['groq', 'openrouter']
+
+/* -------------------------------------------------------------------------- *
+ *  Stream‑запрос с автоматическим fallback                                     *
+ * -------------------------------------------------------------------------- */
+export async function sendMessageStream(
+  messages: Message[],
+  model: string,
+  onChunk: (chunk: string) => void,
+): Promise<void> {
+  // Сначала пробуем текущий провайдер, а затем остальные из fallback‑списка
+  const order = [currentProvider, ...fallbackOrder.filter((k) => k !== currentProvider)]
+
+  let lastError: unknown = null
+
+  for (const key of order) {
+    const provider = providers[key]
+    try {
+      const resolvedModel = resolveModel(model, key)
+      console.log(`🚀 Пробуем ${provider.displayName} → ${resolvedModel}`)
+      await provider.sendStream(messages, resolvedModel, onChunk)
+      console.log(`✅ Успех через ${provider.displayName}`)
+      return // запрос выполнен, дальше не идём
+    } catch (err) {
+      console.warn(`❌ ${provider.displayName} упал:`, err)
+      lastError = err
+    }
+  }
+
+  // Если дошли сюда – все провайдеры завершились ошибкой
+  throw lastError ?? new Error('Все провайдеры упали')
+}
+
+/* -------------------------------------------------------------------------- *
+ *  Упрощённый запрос (без streaming)                                         *
+ * -------------------------------------------------------------------------- */
+export async function sendMessage(messages: Message[], model: string): Promise<string> {
+  let result = ''
+  await sendMessageStream(messages, model, (chunk) => (result += chunk))
+  return result
+}
+
+/* -------------------------------------------------------------------------- *
+ *  Кеш доступных моделей                                                     *
+ * -------------------------------------------------------------------------- */
+const availableModelsCache: Record<ProviderKey, ModelOption[]> = {}
+
+export async function getAvailableModels(provider?: ProviderKey): Promise<ModelOption[]> {
+  const key = provider ?? currentProvider
+  if (availableModelsCache[key]) return availableModelsCache[key]
+
+  const models = await providers[key].getModels()
+  availableModelsCache[key] = models
+  return models
+}

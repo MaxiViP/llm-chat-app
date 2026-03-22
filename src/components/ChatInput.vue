@@ -4,6 +4,8 @@
       ref="textareaRef"
       v-model="input"
       @keydown.ctrl.enter="send"
+      @keydown.up.prevent="historyUp"
+      @keydown.down.prevent="historyDown"
       :disabled="disabled"
       placeholder="Напишите сообщение... (Ctrl+Enter для отправки)"
       rows="3"
@@ -20,25 +22,60 @@ import { ref, nextTick } from 'vue';
 
 const props = defineProps<{
   disabled: boolean;
-}>();
+}>()
 
 const emit = defineEmits<{
   (e: 'send', message: string): void;
-}>();
+}>()
 
-const input = ref('');
-const textareaRef = ref<HTMLTextAreaElement | null>(null);
+const input = ref('')
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+
+// История сообщений
+const history: string[] = []
+let historyIndex = -1 // -1 значит "новое сообщение"
 
 const send = () => {
-  if (!input.value.trim() || props.disabled) return;
-  emit('send', input.value);
-  input.value = '';
+  const trimmed = input.value.trim()
+  if (!trimmed || props.disabled) return
 
-  // Автофокус после отправки
+  emit('send', trimmed)
+
+  // Добавляем в историю, если не дубликат последнего
+  if (!history.length || history[history.length - 1] !== trimmed) {
+    history.push(trimmed)
+  }
+
+  historyIndex = -1 // сброс индекса истории
+  input.value = ''
+
+  // автофокус
   nextTick(() => {
-    textareaRef.value?.focus();
-  });
-};
+    textareaRef.value?.focus()
+  })
+}
+
+// навигация по истории ↑
+const historyUp = () => {
+  if (!history.length) return
+  if (historyIndex === -1) historyIndex = history.length
+  if (historyIndex > 0) historyIndex--
+  input.value = history[historyIndex]
+  nextTick(() => textareaRef.value?.setSelectionRange(input.value.length, input.value.length))
+}
+
+// навигация по истории ↓
+const historyDown = () => {
+  if (!history.length || historyIndex === -1) return
+  if (historyIndex < history.length - 1) {
+    historyIndex++
+    input.value = history[historyIndex]
+  } else {
+    historyIndex = -1
+    input.value = ''
+  }
+  nextTick(() => textareaRef.value?.setSelectionRange(input.value.length, input.value.length))
+}
 </script>
 
 <style scoped>

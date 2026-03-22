@@ -11,16 +11,17 @@
 </template>
 
 <script setup lang="ts">
-import type { Message } from '@/services/llm';
+import type { Message } from '@/services/llm'
 
 defineProps<{
-  message: Message;
-}>();
+  message: Message
+}>()
 </script>
 
 <style scoped>
 .message {
   display: flex;
+  background-color: aquamarine;
   gap: 12px;
   padding: 12px;
   margin-bottom: 16px;
@@ -48,6 +49,7 @@ defineProps<{
 }
 
 .content {
+  background-color:#dedfe0;
   flex: 1;
   line-height: 1.5;
   white-space: pre-wrap;

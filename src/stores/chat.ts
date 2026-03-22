@@ -1,14 +1,17 @@
 import { defineStore } from 'pinia'
-import { ref, onMounted } from 'vue'
-import { sendMessageStream, type Message } from '@/services/llm'
+import { ref, onMounted, watch } from 'vue'
+import { sendMessageStream, setProvider, type Message, getAvailableModels } from '@/services/llm'
 
 interface ModelOption {
   value: string
   label: string
 }
 
+type ProviderKey = 'groq' | 'openrouter'
+
 export const useChatStore = defineStore('chat', () => {
-  // Состояние
+  const LOCAL_STORAGE_KEY = 'chat_messages'
+
   const messages = ref<Message[]>([
     {
       role: 'system',
@@ -17,95 +20,72 @@ export const useChatStore = defineStore('chat', () => {
   ])
 
   const isLoading = ref(false)
-  const isModelsLoading = ref(true) // новый флаг — пока модели не загрузились
-  const selectedModel = ref<string>('')
+  const isModelsLoading = ref(true)
+  const selectedModel = ref<string>('smart')
   const error = ref<string | null>(null)
   const availableModels = ref<ModelOption[]>([])
-  const modelsLoaded = ref(false) // чтобы не грузить повторно
+  const provider = ref<ProviderKey>('groq')
 
-  // Загрузка списка моделей
-  async function loadAvailableModels(force = false) {
-    if (modelsLoaded.value && !force) return // уже загружено — не повторяем
+  /* -------------------------------------------------------------------------- */
+  /*  ЗАГРУЗКА И СОХРАНЕНИЕ В LOCALSTORAGE                                      */
+  /* -------------------------------------------------------------------------- */
 
-    isModelsLoading.value = true
-    error.value = null
-
-    try {
-      const res = await fetch('/api/groq/models', {
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`)
-      }
-
-      const data = await res.json()
-      const modelIds: string[] = data.data?.map((m: any) => m.id) || []
-
-      console.log(`Получено моделей от Groq: ${modelIds.length}`)
-      console.log('Список моделей:', modelIds)
-
-      if (modelIds.length === 0) {
-        throw new Error('API вернул пустой список моделей')
-      }
-
-      // Формируем красивые метки
-      availableModels.value = modelIds.map((id: string) => {
-        let cleanName = id.replace(/^[^/]+\//, '')
-        let label = cleanName.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-
-        if (id.includes('70b')) label += ' — 70B (мощная)'
-        else if (id.includes('8b') || id.includes('9b')) label += ' — 8–9B (быстрая)'
-        else if (id.includes('120b')) label += ' — 120B (очень мощная)'
-        else if (id.includes('scout')) label += ' — Scout (новая)'
-        else label += ' — Groq'
-
-        return { value: id, label }
-      })
-
-      // Сортировка по размеру (примерно)
-      availableModels.value.sort((a, b) => {
-        const getSize = (s: string) => {
-          if (s.includes('120b')) return 120
-          if (s.includes('70b')) return 70
-          if (s.includes('32b') || s.includes('scout')) return 32
-          if (s.includes('8b') || s.includes('9b')) return 9
-          return 0
-        }
-        return getSize(b.value) - getSize(a.value)
-      })
-
-      modelsLoaded.value = true
-      console.log('Список моделей готов для UI:', availableModels.value)
-    } catch (err: any) {
-      console.error('Ошибка загрузки моделей:', err)
-      error.value = 'Не удалось загрузить список моделей. Проверьте ключ API и интернет.'
-
-      // Минимальный fallback — хотя бы одна рабочая модель
-      availableModels.value = [
-        { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile (резервная)' },
-      ]
-    } finally {
-      isModelsLoading.value = false
-
-      // Автовыбор первой модели, если ещё не выбрана
-      if (!selectedModel.value && availableModels.value.length > 0) {
-        selectedModel.value = availableModels.value[0].value
-      }
-    }
-  }
-
-  // Инициализация
+  // загружаем сообщения при старте
   onMounted(() => {
+    const saved = localStorage.getItem(LOCAL_STORAGE_KEY)
+    if (saved) {
+      try {
+        messages.value = JSON.parse(saved)
+      } catch {}
+    }
     loadAvailableModels()
+    setProvider(provider.value)
   })
 
-  // ────────────────────────────────────────────────
-  // Функции чата
-  // ────────────────────────────────────────────────
+  // сохраняем при изменении сообщений
+  watch(
+    messages,
+    (val) => {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(val))
+    },
+    { deep: true },
+  )
+
+  /* -------------------------------------------------------------------------- */
+  /*  МОДЕЛИ                                                                      */
+  /* -------------------------------------------------------------------------- */
+
+  async function loadAvailableModels() {
+    isModelsLoading.value = true
+
+    // alias модели
+    availableModels.value = [
+      { value: 'fast', label: '⚡ Быстрая (дёшево)' },
+      { value: 'smart', label: '🧠 Умная (баланс)' },
+      { value: 'code', label: '💻 Для кода' },
+      { value: 'manual', label: '🛠 Ручная (своя модель)' },
+    ]
+
+    // можно добавить реальные модели провайдера
+    const realModels = await getAvailableModels(provider.value)
+    if (realModels.length) {
+      availableModels.value.push(...realModels)
+    }
+
+    if (!selectedModel.value) selectedModel.value = 'smart'
+    isModelsLoading.value = false
+  }
+
+  async function changeProvider(newProvider: ProviderKey) {
+    if (provider.value === newProvider) return
+    provider.value = newProvider
+    setProvider(newProvider)
+    await loadAvailableModels()
+  }
+
+  /* -------------------------------------------------------------------------- */
+  /*  CHAT ЛОГИКА                                                                */
+  /* -------------------------------------------------------------------------- */
 
   function addUserMessage(content: string) {
     messages.value.push({ role: 'user', content })
@@ -130,32 +110,27 @@ export const useChatStore = defineStore('chat', () => {
 
     isLoading.value = true
     error.value = null
-
     let accumulated = ''
 
     try {
       const historyForAPI = messages.value.filter((m) => m.role !== 'system')
-
       await sendMessageStream(historyForAPI, selectedModel.value, (chunk) => {
         accumulated += chunk
         updateLastMessage(accumulated)
       })
-
-      console.log('Стрим успешно завершён')
     } catch (err: any) {
-      console.error('Ошибка при генерации ответа:', err)
-      error.value = err.message || 'Ошибка генерации ответа. Попробуйте снова.'
+      error.value = err.message || 'Ошибка генерации ответа'
       updateLastMessage(
         accumulated + '\n\n(ответ прерван: ' + (err.message || 'неизвестная ошибка') + ')',
       )
     } finally {
-      // Небольшая задержка — чтобы Vue успел отрендерить последний чанк
-      setTimeout(() => {
-        isLoading.value = false
-        console.log('isLoading сброшен')
-      }, 300)
+      setTimeout(() => (isLoading.value = false), 300)
     }
   }
+
+  /* -------------------------------------------------------------------------- */
+  /*  ОЧИСТКА ЧАТА                                                              */
+  /* -------------------------------------------------------------------------- */
 
   function clearChat() {
     messages.value = [
@@ -164,18 +139,22 @@ export const useChatStore = defineStore('chat', () => {
         content: 'Ты полезный ассистент. Отвечай кратко и по делу на русском языке.',
       },
     ]
+    localStorage.removeItem(LOCAL_STORAGE_KEY)
   }
 
   return {
     messages,
     isLoading,
-    isModelsLoading, // можно использовать в UI для показа лоадера при выборе модели
+    isModelsLoading,
     selectedModel,
     error,
     availableModels,
+    provider,
+
     sendMessage,
     clearChat,
+    changeProvider,
     updateLastMessage,
-    loadAvailableModels, // для кнопки "Обновить список моделей"
+    loadAvailableModels,
   }
 })
