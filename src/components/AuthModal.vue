@@ -1,0 +1,123 @@
+<!-- components/AuthModal.vue -->
+<template>
+  <Teleport to="body">
+    <div v-if="visible" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click="close">
+      <div class="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-xl" @click.stop>
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-semibold">Вход / Регистрация</h2>
+          <button @click="close" class="text-gray-500 hover:text-gray-700">✕</button>
+        </div>
+
+        <div class="space-y-4">
+          <!-- OAuth кнопки -->
+          <button
+            @click="loginWith('google')"
+            class="w-full flex items-center justify-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50 transition"
+          >
+            <img src="https://www.google.com/favicon.ico" class="w-5 h-5" />
+            <span>Войти через Google</span>
+          </button>
+
+          <button
+            @click="loginWith('yandex')"
+            class="w-full flex items-center justify-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50 transition"
+          >
+            <img src="https://yandex.ru/favicon.ico" class="w-5 h-5" />
+            <span>Войти через Яндекс</span>
+          </button>
+
+          <div class="relative">
+            <div class="absolute inset-0 flex items-center">
+              <div class="w-full border-t"></div>
+            </div>
+            <div class="relative flex justify-center text-sm">
+              <span class="bg-white px-2 text-gray-500">или</span>
+            </div>
+          </div>
+
+          <!-- Email форма -->
+          <form @submit.prevent="loginWithEmail">
+            <input
+              v-model="email"
+              type="email"
+              placeholder="Email"
+              required
+              class="w-full px-3 py-2 border rounded-lg mb-2"
+            />
+            <button
+              type="submit"
+              class="w-full bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-700 transition"
+            >
+              Получить код на почту
+            </button>
+          </form>
+
+          <!-- Поле для ввода кода (появляется после отправки email) -->
+          <div v-if="showCodeInput">
+            <input
+              v-model="code"
+              type="text"
+              placeholder="Код из письма"
+              class="w-full px-3 py-2 border rounded-lg"
+            />
+            <button
+              @click="verifyCode"
+              class="w-full mt-2 bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-700 transition"
+            >
+              Подтвердить
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+
+const emit = defineEmits<{
+  (e: 'close'): void
+  (e: 'login'): void
+}>()
+
+const visible = defineModel<boolean>('visible', { default: false })
+
+const authStore = useAuthStore()
+const email = ref('')
+const code = ref('')
+const showCodeInput = ref(false)
+const pendingEmail = ref('')
+
+const close = () => {
+  visible.value = false
+  emit('close')
+}
+
+const loginWith = async (provider: 'google' | 'yandex') => {
+  await authStore.login(provider)
+  close()
+  emit('login')
+}
+
+const loginWithEmail = async () => {
+  if (!email.value) return
+  pendingEmail.value = email.value
+  // Имитация отправки кода
+  const mockCode = Math.floor(100000 + Math.random() * 900000).toString()
+  alert(`Код отправлен на ${email.value}. Для теста: ${mockCode}`)
+  showCodeInput.value = true
+}
+
+const verifyCode = async () => {
+  // Здесь нужно проверить code (имитация: любой код подходит)
+  if (code.value) {
+    await authStore.login('email', pendingEmail.value)
+    close()
+    emit('login')
+  } else {
+    alert('Введите код')
+  }
+}
+</script>

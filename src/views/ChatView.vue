@@ -1,20 +1,34 @@
 <template>
   <div class="chat-view flex flex-col h-screen bg-gray-50">
     <!-- Header -->
-    <div class="header flex justify-between items-center p-4 bg-white border-b shadow-sm">
+    <div class="header flex justify-between items-center p-1 bg-white border-b shadow-sm w-full">
       <div class="flex items-center gap-3">
         <div v-if="store.isModelsLoading" class="text-gray-500 text-sm">Загрузка моделей...</div>
         <ModelSelect v-else />
-        <span
-          :class="[
-            'px-2 py-1 rounded-full text-xs sm:text-sm font-medium transition-colors',
-            store.isLoading
-              ? 'bg-yellow-100 text-yellow-800 animate-pulse'
-              : 'bg-green-100 text-green-800',
-          ]"
+      </div>
+
+      <div class="flex items-center gap-3">
+        <!-- QR-код кнопка -->
+        <button
+          v-if="!authStore.isAuthenticated"
+          @click="showAuthModal = true"
+          class="flex items-center gap-2 px-3 py-2 bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition"
         >
-          {{ store.isLoading ? '💭 думает…' : '✓ готов' }}
-        </span>
+          <span>👤</span>
+          <span class="hidden sm:inline">Войти</span>
+        </button>
+
+        <RouterLink
+          v-else
+          to="/profile"
+          class="flex items-center gap-2 hover:bg-gray-100 rounded-full p-2 transition-colors"
+        >
+          <div class="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-600">
+            {{ authStore.user?.name?.charAt(0).toUpperCase() || '👤' }}
+          </div>
+          <span class="hidden sm:inline text-sm text-gray-700">{{ authStore.user?.name }}</span>
+        </RouterLink>
+
       </div>
     </div>
 
@@ -67,23 +81,34 @@
     <div ref="inputWrapperRef" class="flex-shrink-0 border-t bg-white shadow-lg">
       <ChatInput ref="chatInputRef" :disabled="store.isLoading" @send="handleSend" />
     </div>
+
+    <!-- Модальное окно авторизации -->
+    <AuthModal v-model:visible="showAuthModal" @login="handleLogin" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
+import { useAuthStore } from '@/stores/auth'
 import ChatMessage from '@/components/ChatMessage.vue'
 import ChatInput from '@/components/ChatInput.vue'
 import ModelSelect from '@/components/ModelSelect.vue'
+import AuthModal from '@/components/AuthModal.vue'
 
 const store = useChatStore()
+const authStore = useAuthStore()
 const messagesContainer = ref<HTMLElement | null>(null)
 const inputWrapperRef = ref<HTMLElement | null>(null)
+const showAuthModal = ref(false)
 
 const displayMessages = computed(() => store.messages.filter((m) => m.role !== 'system'))
 
 const handleSend = (msg: string) => store.sendMessage(msg)
+const handleLogin = () => {
+  console.log('Пользователь авторизован')
+}
 
 const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
   if (!messagesContainer.value) return
@@ -94,13 +119,18 @@ const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
   })
 }
 
+let scrollInterval: NodeJS.Timeout | null = null
+
 watch(
   () => store.isLoading,
   (isLoading) => {
     if (isLoading) {
-      const interval = setInterval(() => scrollToBottom('auto'), 100)
-      onUnmounted(() => clearInterval(interval))
+      scrollInterval = setInterval(() => scrollToBottom('auto'), 100)
     } else {
+      if (scrollInterval) {
+        clearInterval(scrollInterval)
+        scrollInterval = null
+      }
       scrollToBottom('smooth')
     }
   },
@@ -115,15 +145,19 @@ watch(
 )
 
 onMounted(() => scrollToBottom())
+
+onUnmounted(() => {
+  if (scrollInterval) {
+    clearInterval(scrollInterval)
+  }
+})
 </script>
 
 <style scoped>
 .header {
-  background-color: rgb(17 24 39 / var(--tw-bg-opacity, 1));
+  background-color: white;
 }
-/* .chat-view {
-  background-color: rgb(11 1 10 / var(--tw-bg-opacity, 1));
-} */
+
 /* Анимации */
 @keyframes slideUp {
   from {
@@ -173,18 +207,18 @@ onMounted(() => scrollToBottom())
 }
 
 /* Скроллбар */
-::-webkit-scrollbar {
+.messages-container::-webkit-scrollbar {
   width: 6px;
 }
-::-webkit-scrollbar-track {
+.messages-container::-webkit-scrollbar-track {
   background: #f3f4f6;
   border-radius: 9999px;
 }
-::-webkit-scrollbar-thumb {
+.messages-container::-webkit-scrollbar-thumb {
   background: #9ca3af;
   border-radius: 9999px;
 }
-::-webkit-scrollbar-thumb:hover {
+.messages-container::-webkit-scrollbar-thumb:hover {
   background: #6b7280;
 }
 </style>
