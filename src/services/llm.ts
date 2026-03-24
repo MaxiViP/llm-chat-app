@@ -204,9 +204,20 @@ export function getProvider(): OpenAICompatibleProvider {
 
 export function getProviderLimits(provider?: ProviderKey): { perMinute: number; perDay: number } {
 	const p = provider ? providers[provider] : getProvider()
-	return p.key === 'openrouter' ? p.getLimits() : { perMinute: Infinity, perDay: Infinity }
-}
 
+	if (p.key === 'openrouter') {
+		return p.getLimits()
+	}
+
+	if (p.key === 'groq') {
+		return {
+			perMinute: 30, // пример
+			perDay: 1000,
+		}
+	}
+
+	return { perMinute: Infinity, perDay: Infinity }
+}
 type ModelAlias = 'fast' | 'smart' | 'code'
 const modelMap: Record<ModelAlias, Record<ProviderKey, string>> = {
 	fast: { groq: 'llama-3.1-8b-instant', openrouter: 'qwen/qwen2.5-7b-instruct:free' },

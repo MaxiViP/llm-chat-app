@@ -1,92 +1,107 @@
-// // Лимит-трекер для всех провайдеров
-// export class LimitTracker {
-//   private usage: Record<string, number> = {};
-//   private limits: Record<string, number> = {};
+// Лимит-трекер для всех провайдеров
+export interface LimitInfo {
+  providerId: string;
+  used: number;
+  limit: number;
+  percentUsed: number;
+  remaining: number;
+}
+
+export class LimitTracker {
+  private usage: Record<string, number> = {};
+  private limits: Record<string, number> = {};
   
-//   constructor() {
-//     // Инициализация лимитов (загружается из конфига)
-//     this.loadLimits();
-//   }
+  constructor() {
+    this.loadLimits();
+  }
   
-//   async loadLimits(): Promise<void> {
-//     try {
-//       const limits = await fetchLimits(); // Загрузка лимитов из конфига
-//       this.limits = limits;
+  async loadLimits(): Promise<void> {
+    try {
+      // Загрузка лимитов из конфига
+      const limits = await fetchLimits(); 
+      this.limits = limits;
       
-//       // Загрузка текущего использования
-//       const usage = await fetchUsage();
-//       this.usage = usage;
-//     } catch (error) {
-//       console.error('Ошибка загрузки лимитов:', error);
-//     }
-//   }
+      // Загрузка текущего использования
+      const usage = await fetchUsage();
+      this.usage = usage;
+    } catch (error) {
+      console.error('Ошибка загрузки лимитов:', error);
+    }
+  }
   
-//   // Регистрация нового провайдера
-//   registerProvider(providerId: string, limit: number): void {
-//     if (!this.limits[providerId]) {
-//       this.limits[providerId] = limit;
-//       this.saveLimits();
-//     }
-//   }
+  // Регистрация нового провайдера
+  registerProvider(providerId: string, limit: number): void {
+    if (!this.limits[providerId]) {
+      this.limits[providerId] = limit;
+      this.saveLimits();
+    }
+  }
   
-//   // Запись использования
-//   recordUsage(providerId: string, bytes: number): void {
-//     if (this.usage[providerId] === undefined) {
-//       this.usage[providerId] = 0;
-//     }
+  // Запись использования
+  recordUsage(providerId: string, bytes: number): void {
+    if (this.usage[providerId] === undefined) {
+      this.usage[providerId] = 0;
+    }
     
-//     this.usage[providerId] += bytes;
-//     this.saveUsage();
+    this.usage[providerId] += bytes;
+    this.saveUsage();
     
-//     // Проверка превышения лимита
-//     this.checkLimit(providerId);
-//   }
+    // Проверка превышения лимита
+    this.checkLimit(providerId);
+  }
   
-//   // Проверка состояния лимита
-//   checkLimit(providerId: string): boolean {
-//     const usage = this.usage[providerId] || 0;
-//     const limit = this.limits[providerId] || 0;
+  // Получение информации о лимите
+  getLimitInfo(providerId: string): LimitInfo {
+    const usage = this.usage[providerId] || 0;
+    const limit = this.limits[providerId] || 0;
     
-//     const percentUsed = (usage / limit) * 100;
+    return {
+      providerId,
+      used: usage,
+      limit,
+      percentUsed: (usage / limit) * 100,
+      remaining: limit - usage
+    };
+  }
+  
+  // Проверка доступности провайдера
+  isProviderAvailable(providerId: string): boolean {
+    const info = this.getLimitInfo(providerId);
+    return info.remaining > 0;
+  }
+  
+  // Сохранение данных
+  private saveUsage(): void {
+    // Логика сохранения использования
+  }
+  
+  private saveLimits(): void {
+    // Логика сохранения лимитов
+  }
+  
+  // Функции загрузки (placeholder)
+  private fetchLimits(): Promise<Record<string, number>> {
+    return new Promise(resolve => resolve({
+      "groq": 1000,
+      "openai": 500,
+      "anthropic": 800
+    }));
+  }
+  
+  private fetchUsage(): Promise<Record<string, number>> {
+    return new Promise(resolve => resolve({
+      "groq": 234,
+      "openai": 123,
+      "anthropic": 456
+    }));
+  }
+  
+  // Проверка превышения лимита
+  private checkLimit(providerId: string): void {
+    const info = this.getLimitInfo(providerId);
     
-//     // Вывод предупреждений
-//     if (percentUsed > 95) {
-//       console.warn(`✅ Лимит почти исчерпан!`, providerId, percentUsed, '%');
-//       return true;
-//     } else if (percentUsed > 90) {
-//       console.warn(`⚠️ Лимит превышает 90%!`, providerId, percentUsed, '%');
-//       return true;
-//     }
-    
-//     return false;
-//   }
-  
-//   // Получение информации о лимите
-//   getLimitInfo(providerId: string): LimitInfo {
-//     const usage = this.usage[providerId] || 0;
-//     const limit = this.limits[deviderId] || 0;
-    
-//     return {
-//       providerId,
-//       used: usage,
-//       limit,
-//       percentUsed: (usage / limit) * 100,
-//       remaining: limit - usage
-//     };
-//   }
-  
-//   // Проверка доступности провайдера
-//   isProviderAvailable(providerId: string): boolean {
-//     const info = this.getLimitInfo(providerId);
-//     return info.remaining > 0;
-//   }
-  
-//   // Сохранение данных
-//   private saveUsage(): void {
-//     // Логика сохранения использования
-//   }
-  
-//   private saveLimits(): void {
-//     // Логика сохранения лимитов
-//   }
-// }
+    if (info.percentUsed > 100) {
+      throw new Error(`Лимит превышен для провайдера: ${providerId}`);
+    }
+  }
+}
