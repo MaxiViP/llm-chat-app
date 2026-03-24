@@ -35,74 +35,135 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps<{ disabled: boolean }>()
 const emit = defineEmits<{ (e: 'send', message: string): void }>()
 
-const input = ref('')
+const input = ref<string>('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
-const placeholderText = computed(() =>
-  window.innerWidth < 640
-    ? 'Сообщение... (Enter для отправки)'
-    : 'Напишите сообщение... (Ctrl+Enter для отправки)'
-)
+
+// Определение типа для window
+const isWindowDefined = typeof window !== 'undefined'
+
+const placeholderText = computed(() => {
+  if (isWindowDefined) {
+    return window.innerWidth < 640
+      ? 'Сообщение... (Enter для отправки)'
+      : 'Напишите сообщение... (Ctrl+Enter для отправки)'
+  }
+  return 'Напишите сообщение... (Ctrl+Enter для отправки)'
+})
 
 // История сообщений
 const history: string[] = []
-let historyIndex = -1
-let tempInput = ''  // сохраняем текущее сообщение перед навигацией по истории
+let historyIndex: number = -1
+let tempInput: string = ''  // сохраняем текущее сообщение перед навигацией по истории
 
-const send = () => {
+const send = (): void => {
   const trimmed = input.value.trim()
   if (!trimmed || props.disabled) return
 
   emit('send', trimmed)
 
   // Сохраняем в историю, если новое сообщение
-  if (!history.length || history[history.length - 1] !== trimmed) history.push(trimmed)
+  if (!history.length || history[history.length - 1] !== trimmed) {
+    history.push(trimmed)
+  }
   historyIndex = -1
   tempInput = ''
   input.value = ''
 
   // Всегда фокусируем поле после отправки
-  nextTick(() => textareaRef.value?.focus())
+  nextTick(() => {
+    if (textareaRef.value) {
+      textareaRef.value.focus()
+    }
+  })
 }
 
 // Навигация по истории вверх
-const historyUp = () => {
+const historyUp = (): void => {
   if (!history.length) return
+  
   if (historyIndex === -1) {
     historyIndex = history.length - 1
     tempInput = input.value   // сохраняем текущее сообщение
   } else if (historyIndex > 0) {
     historyIndex--
   }
-  input.value = history[historyIndex]
-  nextTick(() => textareaRef.value?.setSelectionRange(input.value.length, input.value.length))
+  
+  const historyValue = history[historyIndex]
+  if (historyValue !== undefined) {
+    input.value = historyValue
+    nextTick(() => {
+      if (textareaRef.value) {
+        const length = input.value.length
+        textareaRef.value.setSelectionRange(length, length)
+      }
+    })
+  }
 }
 
 // Навигация по истории вниз
-const historyDown = () => {
+const historyDown = (): void => {
   if (!history.length || historyIndex === -1) return
+  
   if (historyIndex < history.length - 1) {
     historyIndex++
-    input.value = history[historyIndex]
+    const historyValue = history[historyIndex]
+    if (historyValue !== undefined) {
+      input.value = historyValue
+    }
   } else {
     historyIndex = -1
     input.value = tempInput   // возвращаем то, что было перед историей
   }
-  nextTick(() => textareaRef.value?.setSelectionRange(input.value.length, input.value.length))
+  
+  nextTick(() => {
+    if (textareaRef.value) {
+      const length = input.value.length
+      textareaRef.value.setSelectionRange(length, length)
+    }
+  })
 }
+
+// Обновление placeholder при изменении размера окна
+const updatePlaceholder = (): void => {
+  // Просто вызываем перерасчет computed свойства
+  // placeholderText обновится автоматически
+}
+
+onMounted(() => {
+  if (isWindowDefined) {
+    window.addEventListener('resize', updatePlaceholder)
+  }
+})
+
+onUnmounted(() => {
+  if (isWindowDefined) {
+    window.removeEventListener('resize', updatePlaceholder)
+  }
+})
 </script>
 
 <style scoped>
 /* Анимация спиннера */
-@keyframes spin { to { transform: rotate(360deg); } }
-.animate-spin { animation: spin 1s linear infinite; }
+@keyframes spin { 
+  to { 
+    transform: rotate(360deg); 
+  } 
+}
+
+.animate-spin { 
+  animation: spin 1s linear infinite; 
+}
 
 /* Темная тема */
 @media (prefers-color-scheme: dark) {
-  .chat-input { @apply bg-gray-900 border-gray-700; }
+  .chat-input { 
+    background-color: rgb(17 24 39);
+    border-color: rgb(55 65 81);
+  }
 }
 </style>
