@@ -15,6 +15,28 @@
 				>
 					{{ store.isLoading ? '💭 думает…' : '✓' }}
 				</span>
+				<div class="flex items-center gap-2 ml-auto flex-shrink-0">
+					<!-- QR-код кнопка -->
+					<button
+						v-if="!authStore.isAuthenticated"
+						@click="showAuthModal = true"
+						class="flex items-center gap-2 px-3 py-2 bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition md:pr-4"
+					>
+						<span>👤</span>
+						<span class="hidden sm:inline">Войти</span>
+					</button>
+
+					<RouterLink
+						v-else
+						to="/profile"
+						class="flex items-center gap-2 hover:bg-gray-100 rounded-full p-2 transition-colors"
+					>
+						<div class="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-600">
+							{{ authStore.user?.name?.charAt(0).toUpperCase() || '👤' }}
+						</div>
+						<span class="hidden sm:inline text-sm text-gray-700">{{ authStore.user?.name }}</span>
+					</RouterLink>
+				</div>
 			</div>
 		</div>
 
@@ -83,7 +105,7 @@
 		</div>
 
 		<!-- LIMITS -->
-		<div v-if="showLimits" class="mt-2 space-y-1 text-xs">
+		<div v-if="showLimits" class="limits mt-2 space-y-1 text-xs">
 			<div class="flex justify-between">
 				<span>Лимит/мин: {{ limits.perMinute }} / {{ MAX_LIMITS.perMinute }}</span>
 				<span>{{ Math.round(perMinutePercent) }}%</span>
@@ -99,7 +121,7 @@
 				/>
 			</div>
 
-			<div class="flex justify-between mt-2">
+			<div class="limits flex justify-between mt-2">
 				<span>Лимит/день: {{ limits.perDay }} / {{ MAX_LIMITS.perDay }}</span>
 				<span>{{ Math.round(perDayPercent) }}%</span>
 			</div>
@@ -121,7 +143,9 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
+import { useAuthStore } from '@/stores/auth'
 import { getProviderLimits } from '@/services/llm'
 
 import QRCode from './QrCode.vue'
@@ -136,6 +160,7 @@ const providerList = [
 type ProviderKey = (typeof providerList)[number]['key']
 
 const store = useChatStore()
+const authStore = useAuthStore()
 
 // STATE
 const isProviderOpen = ref(false)
@@ -146,11 +171,9 @@ const modelRef = ref<HTMLElement | null>(null)
 
 const showAuthModal = ref(false)
 
-// 🔧 ИСПРАВЛЕНИЕ 1: Гарантируем, что selectedProvider всегда имеет корректный тип
+// Гарантируем, что selectedProvider всегда имеет корректный тип
 const selectedProvider = ref<ProviderKey>(
-	store.provider && providerList.some(p => p.key === store.provider) 
-		? store.provider as ProviderKey 
-		: 'groq'
+	store.provider && providerList.some(p => p.key === store.provider) ? (store.provider as ProviderKey) : 'groq',
 )
 
 const options = computed(() => store.availableModels)
@@ -193,16 +216,15 @@ function truncate(text: string, max = 40) {
 	return text.length > max ? text.slice(0, max) + '…' : text
 }
 
-// 🔧 ИСПРАВЛЕНИЕ 2: Добавляем проверку на undefined для limits
+// LIMITS
 const limits = computed(() => {
 	const lim = getProviderLimits(selectedProvider.value)
 	return {
 		perMinute: lim?.perMinute ?? 0,
-		perDay: lim?.perDay ?? 0
+		perDay: lim?.perDay ?? 0,
 	}
 })
 
-// 🔧 ИСПРАВЛЕНИЕ 3: Определяем типы для лимитов
 interface Limits {
 	perMinute: number
 	perDay: number
@@ -240,7 +262,6 @@ function getProgressColor(percent: number) {
 	return '#F87171'
 }
 
-// 🔧 ИСПРАВЛЕНИЕ 4: Улучшаем типизацию getModelStatusIcon
 interface ModelOption {
 	value: string
 	label?: string
@@ -252,7 +273,6 @@ function getModelStatusIcon(model: ModelOption): string {
 			return '🔴'
 		}
 	}
-	// Проверяем, доступна ли модель
 	const isAvailable = store.availableModels.some(m => m.value === model.value)
 	return isAvailable ? '🟢' : '🔴'
 }
@@ -268,6 +288,11 @@ function handleClickOutside(e: MouseEvent) {
 	}
 }
 
+// LOGIN
+function handleLogin() {
+	console.log('Пользователь авторизован')
+}
+
 // LIFECYCLE
 onMounted(() => {
 	document.addEventListener('click', handleClickOutside)
@@ -276,16 +301,15 @@ onMounted(() => {
 onUnmounted(() => {
 	document.removeEventListener('click', handleClickOutside)
 })
-
-// LOGIN
-function handleLogin() {
-	console.log('login')
-}
 </script>
 
 <style scoped>
 .model-select {
 	width: 100%;
+}
+
+.limits {
+	display: none;
 }
 
 /* плавное появление */
