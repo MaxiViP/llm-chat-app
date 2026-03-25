@@ -1,6 +1,6 @@
 <template>
 	<div class="model-select p-2 bg-gray-50 border-b border-gray-200 flex flex-col gap-2">
-		<!-- Header -->
+		<!-- Заголовок -->
 		<div class="flex justify-between items-center">
 			<label class="font-medium text-gray-700">Провайдер и модель:</label>
 
@@ -15,6 +15,7 @@
 				>
 					{{ store.isLoading ? '💭 думает…' : '✓' }}
 				</span>
+
 				<div class="flex items-center gap-2 ml-auto flex-shrink-0">
 					<!-- QR-код кнопка -->
 					<button
@@ -42,7 +43,7 @@
 
 		<!-- Dropdowns -->
 		<div class="flex flex-col sm:flex-row gap-3">
-			<!-- PROVIDER -->
+			<!-- ПРОВАЙДЕР -->
 			<div class="relative w-full sm:w-48" ref="providerRef">
 				<button
 					@click="toggleProvider"
@@ -69,7 +70,7 @@
 				</div>
 			</div>
 
-			<!-- MODEL -->
+			<!-- МОДЕЛЬ -->
 			<div class="relative flex-1" ref="modelRef">
 				<button
 					@click="toggleModel"
@@ -104,8 +105,8 @@
 			</div>
 		</div>
 
-		<!-- LIMITS -->
-		<div v-if="showLimits" class="limits mt-2 space-y-1 text-xs">
+		<!-- ЛИМИТЫ -->
+		<div v-if="showLimits" class="mt-2 space-y-1 text-xs">
 			<div class="flex justify-between">
 				<span>Лимит/мин: {{ limits.perMinute }} / {{ MAX_LIMITS.perMinute }}</span>
 				<span>{{ Math.round(perMinutePercent) }}%</span>
@@ -121,7 +122,7 @@
 				/>
 			</div>
 
-			<div class="limits flex justify-between mt-2">
+			<div class="flex justify-between mt-2">
 				<span>Лимит/день: {{ limits.perDay }} / {{ MAX_LIMITS.perDay }}</span>
 				<span>{{ Math.round(perDayPercent) }}%</span>
 			</div>
@@ -146,12 +147,15 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useAuthStore } from '@/stores/auth'
-import { getProviderLimits } from '@/services/llm'
-
 import QRCode from './QrCode.vue'
 import AuthModal from './AuthModal.vue'
+import { getProviderLimits } from '@/services/llm'
 
-// PROVIDERS
+// interface Provider {
+// 	key: string
+// 	name: string
+// }
+
 const providerList = [
 	{ key: 'groq', name: 'Groq ⚡' },
 	{ key: 'openrouter', name: 'OpenRouter 🌐' },
@@ -162,34 +166,32 @@ type ProviderKey = (typeof providerList)[number]['key']
 const store = useChatStore()
 const authStore = useAuthStore()
 
-// STATE
+// Состояние
 const isProviderOpen = ref(false)
 const isModelOpen = ref(false)
-
-const providerRef = ref<HTMLElement | null>(null)
-const modelRef = ref<HTMLElement | null>(null)
-
 const showAuthModal = ref(false)
+const providerRef = ref<HTMLDivElement | null>(null)
+const modelRef = ref<HTMLDivElement | null>(null)
 
-// Гарантируем, что selectedProvider всегда имеет корректный тип
+// Выбранный провайдер
 const selectedProvider = ref<ProviderKey>(
 	store.provider && providerList.some(p => p.key === store.provider) ? (store.provider as ProviderKey) : 'groq',
 )
 
-const options = computed(() => store.availableModels)
-
-// LABELS
+// Расчёты
 const currentProviderLabel = computed(() => {
 	const provider = providerList.find(p => p.key === selectedProvider.value)
 	return provider?.name || 'Выберите провайдера'
 })
+
+const options = computed(() => store.availableModels || [])
 
 const selectedModelLabel = computed(() => {
 	const model = options.value.find(m => m.value === store.selectedModel)
 	return model ? truncate(model.label) : 'Выберите модель'
 })
 
-// ACTIONS
+// Методы
 function toggleProvider() {
 	isProviderOpen.value = !isProviderOpen.value
 	isModelOpen.value = false
@@ -211,12 +213,12 @@ function selectModel(model: string) {
 	isModelOpen.value = false
 }
 
-// TRUNCATE
 function truncate(text: string, max = 40) {
 	return text.length > max ? text.slice(0, max) + '…' : text
 }
 
-// LIMITS
+// Лимиты
+
 const limits = computed(() => {
 	const lim = getProviderLimits(selectedProvider.value)
 	return {
@@ -224,7 +226,6 @@ const limits = computed(() => {
 		perDay: lim?.perDay ?? 0,
 	}
 })
-
 interface Limits {
 	perMinute: number
 	perDay: number
@@ -255,7 +256,6 @@ const perDayPercent = computed(() => {
 	if (max === 0) return 0
 	return Math.min(100, (limits.value.perDay / max) * 100)
 })
-
 function getProgressColor(percent: number) {
 	if (percent > 50) return '#34D399'
 	if (percent > 20) return '#FBBF24'
@@ -273,11 +273,11 @@ function getModelStatusIcon(model: ModelOption): string {
 			return '🔴'
 		}
 	}
-	const isAvailable = store.availableModels.some(m => m.value === model.value)
+	const isAvailable = options.value.some(m => m.value === model.value)
 	return isAvailable ? '🟢' : '🔴'
 }
 
-// CLICK OUTSIDE
+// Клик вне выпадающего меню
 function handleClickOutside(e: MouseEvent) {
 	if (providerRef.value && !providerRef.value.contains(e.target as Node)) {
 		isProviderOpen.value = false
@@ -288,19 +288,17 @@ function handleClickOutside(e: MouseEvent) {
 	}
 }
 
-// LOGIN
+// Авторизация
 function handleLogin() {
 	console.log('Пользователь авторизован')
 }
 
-// LIFECYCLE
+// Жизненный цикл
 onMounted(() => {
 	document.addEventListener('click', handleClickOutside)
 })
 
-onUnmounted(() => {
-	document.removeEventListener('click', handleClickOutside)
-})
+onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 </script>
 
 <style scoped>
@@ -308,15 +306,7 @@ onUnmounted(() => {
 	width: 100%;
 }
 
-.limits {
-	display: none;
-}
-
-/* плавное появление */
-div[role='dropdown'] {
-	animation: fadeIn 0.15s ease;
-}
-
+/* Анимации */
 @keyframes fadeIn {
 	from {
 		opacity: 0;
@@ -326,5 +316,9 @@ div[role='dropdown'] {
 		opacity: 1;
 		transform: translateY(0);
 	}
+}
+
+div[role='dropdown'] {
+	animation: fadeIn 0.15s ease;
 }
 </style>

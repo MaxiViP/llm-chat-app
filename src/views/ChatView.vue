@@ -1,6 +1,6 @@
 <template>
 	<div class="chat-view flex flex-col h-screen bg-gray-50">
-		<!-- Header -->
+		<!-- Заголовок -->
 		<header class="flex justify-center items-center p-2 bg-white border-b shadow-sm w-full sticky top-0 z-10">
 			<div class="flex items-center gap-3 flex-1">
 				<div v-if="store.isModelsLoading" class="text-gray-500 text-sm">Загрузка моделей...</div>
@@ -8,7 +8,7 @@
 			</div>
 		</header>
 
-		<!-- Messages -->
+		<!-- Собщения -->
 		<div ref="messagesContainer" class="flex-1 overflow-y-auto flex flex-col gap-2 p-4">
 			<ChatMessage
 				v-for="(msg, idx) in displayMessages"
@@ -17,7 +17,7 @@
 				:is-new="idx === displayMessages.length - 1 && msg.role === 'assistant' && store.isLastMessageStreaming"
 			/>
 
-			<!-- Печатает -->
+			<!-- Пишет... -->
 			<div
 				v-if="
 					store.isLoading && displayMessages.length && displayMessages[displayMessages.length - 1]?.role !== 'assistant'
@@ -47,14 +47,13 @@
 			</div>
 		</div>
 
-		<!-- Input -->
+		<!-- Ввод -->
 		<div ref="inputWrapperRef" class="flex-shrink-0 border-t bg-white shadow-lg">
 			<ChatInput ref="chatInputRef" :disabled="store.isLoading" @send="handleSend" />
 		</div>
-
-		<!-- Модальное окно авторизации -->
-		<AuthModal v-model:visible="showAuthModal" @login="handleLogin" />
 	</div>
+	<!-- Модальное окно авторизации -->
+	<AuthModal v-model:visible="showAuthModal" @login="handleLogin" />
 </template>
 
 <script setup lang="ts">
@@ -65,32 +64,35 @@ import { useAuthStore } from '@/stores/auth'
 import ChatMessage from '@/components/ChatMessage.vue'
 import ChatInput from '@/components/ChatInput.vue'
 import ModelSelect from '@/components/ModelSelect.vue'
-import AuthModal from '@/components/AuthModal.vue'
 
 const store = useChatStore()
+const messagesContainer = ref<HTMLDivElement | null>(null)
+const inputWrapperRef = ref<HTMLDivElement | null>(null)
 const authStore = useAuthStore()
-const messagesContainer = ref<HTMLElement | null>(null)
-const inputWrapperRef = ref<HTMLElement | null>(null)
-const showAuthModal = ref(false)
-
 const displayMessages = computed(() => store.messages.filter(m => m.role !== 'system'))
-
+const showAuthModal = ref(false)
 const handleSend = (msg: string) => store.sendMessage(msg)
 const handleLogin = () => {
 	console.log('Пользователь авторизован')
 }
 
+// Автовыкат вниз
 const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
 	if (!messagesContainer.value) return
+
 	nextTick(() => {
 		requestAnimationFrame(() =>
-			messagesContainer.value?.scrollTo({ top: messagesContainer.value.scrollHeight, behavior }),
+			messagesContainer.value?.scrollTo({
+				top: messagesContainer.value.scrollHeight,
+				behavior,
+			}),
 		)
 	})
 }
 
 let scrollInterval: NodeJS.Timeout | null = null
 
+// Слежу за состоянием загрузки
 watch(
 	() => store.isLoading,
 	isLoading => {
@@ -104,17 +106,19 @@ watch(
 			scrollToBottom('smooth')
 		}
 	},
+	{ immediate: true },
 )
+
+// Слежу за новыми сообщениями
 watch(
 	() => store.messages.length,
 	() => scrollToBottom('smooth'),
-)
-watch(
-	() => store.messages[store.messages.length - 1]?.content,
-	() => store.isLoading && scrollToBottom('auto'),
+	{ immediate: true },
 )
 
-onMounted(() => scrollToBottom())
+onMounted(() => {
+	scrollToBottom()
+})
 
 onUnmounted(() => {
 	if (scrollInterval) {
@@ -163,15 +167,5 @@ onUnmounted(() => {
 }
 .animate-fadeIn {
 	animation: fadeIn 0.5s ease-out forwards;
-}
-.animate-bounce {
-	animation: bounce 1.4s infinite ease-in-out both;
-}
-
-.delay-75 {
-	animation-delay: 0.1s;
-}
-.delay-150 {
-	animation-delay: 0.2s;
 }
 </style>
