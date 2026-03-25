@@ -32,6 +32,26 @@ export const useChatStore = defineStore('chat', () => {
 	const currentFallbackAttempt = ref(0)
 	const isLastMessageStreaming = ref(false)
 
+	const userMessageCount = ref(0)
+
+	function pickRandomModel(): { model: string; provider: ProviderKey } {
+		const allModels = [
+			...cachedRealModels.value.groq.map(m => ({ ...m, provider: 'groq' as const })),
+			...cachedRealModels.value.openrouter.map(m => ({ ...m, provider: 'openrouter' as const })),
+		]
+
+		if (!allModels.length) {
+			return { model: selectedModel.value, provider: provider.value }
+		}
+
+		// ✅ FIX: добавлен !
+		const random = allModels[Math.floor(Math.random() * allModels.length)]!
+
+		return {
+			model: random.value,
+			provider: random.provider,
+		}
+	}
 	/* ---------- Кеширование реальных моделей ---------- */
 	const cachedRealModels = ref<Record<ProviderKey, ModelOption[]>>({
 		groq: [],
@@ -202,7 +222,14 @@ export const useChatStore = defineStore('chat', () => {
 		historyMessages: Message[],
 		onChunk: (chunk: string) => void,
 	): Promise<boolean> {
-		const fallbackModels = getFallbackModels()
+		const fallbackModels = [
+			{
+				provider: provider.value,
+				model: selectedModel.value,
+				name: `Selected: ${selectedModel.value}`,
+			},
+			...getFallbackModels(),
+		]
 		let lastError: any = null
 
 		console.log(`📋 Всего моделей для fallback: ${fallbackModels.length}`)
@@ -273,6 +300,20 @@ export const useChatStore = defineStore('chat', () => {
 		if (!userInput.trim() || isLoading.value || !selectedModel.value) return
 
 		addUserMessage(userInput)
+
+		// 👇 считаем сообщения
+		userMessageCount.value++
+
+		// 👇 каждые 3 сообщения меняем модель
+		if (userMessageCount.value % 3 === 0) {
+			const random = pickRandomModel()
+
+			selectedModel.value = random.model
+			provider.value = random.provider
+			setProvider(random.provider)
+
+			console.log('🔄 Модель:', random.model, 'провайдер:', random.provider)
+		}
 		const assistantMessage = createAssistantMessage()
 
 		isLoading.value = true
@@ -281,12 +322,12 @@ export const useChatStore = defineStore('chat', () => {
 		currentFallbackAttempt.value = 0
 
 		try {
-			// Полная история (системное сообщение + остальные)
+			// 📦 собираем историю
 			const systemMsg = messages.value.find(m => m.role === 'system')
 			const historyWithoutSystem = messages.value.filter(m => m.role !== 'system')
 			const fullHistory = systemMsg ? [systemMsg, ...historyWithoutSystem] : historyWithoutSystem
 
-			// Обрезка по токенам
+			// ✂️ обрезаем
 			const trimmedHistory = trimHistory(fullHistory)
 
 			let fullResponse = ''
@@ -305,7 +346,7 @@ export const useChatStore = defineStore('chat', () => {
 
 			if (errMsg.includes('402') || errMsg.includes('tokens')) {
 				assistantMessage.content =
-					'⚠️ **Превышен лимит токенов**\n\nДиалог слишком длинный для бесплатных моделей. Попробуйте:\n• Начать новый чат (кнопка "Очистить чат")\n• Задать более короткий вопрос\n\nВаш вопрос: "' +
+					'⚠️ **Превышен лимит токенов**\n\nДиалог слишком длинный для бесплатных моделей. Попробуйте:\n• Начать новый чат\n• Задать более короткий вопрос\n\nВаш вопрос: "' +
 					userInput.slice(0, 100) +
 					(userInput.length > 100 ? '...' : '') +
 					'"'

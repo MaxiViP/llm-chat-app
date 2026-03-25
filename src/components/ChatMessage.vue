@@ -69,6 +69,7 @@ const displayedText = ref('')
 const isTyping = ref(false)
 const isComplete = ref(false)
 
+
 let typingInterval: NodeJS.Timeout | null = null
 let currentIndex = 0
 
