@@ -106,7 +106,7 @@
 		</div>
 
 		<!-- ЛИМИТЫ -->
-		<div v-if="showLimits" class="mt-2 space-y-1 text-xs">
+		<div v-if="showLimits" class=" limits mt-2 space-y-1 text-xs">
 			<div class="flex justify-between">
 				<span>Лимит/мин: {{ limits.perMinute }} / {{ MAX_LIMITS.perMinute }}</span>
 				<span>{{ Math.round(perMinutePercent) }}%</span>
@@ -304,6 +304,9 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 <style scoped>
 .model-select {
 	width: 100%;
+}
+.limits  {
+	display: none;
 }
 
 /* Анимации */
