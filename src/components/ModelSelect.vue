@@ -146,13 +146,19 @@ const modelRef = ref<HTMLElement | null>(null)
 
 const showAuthModal = ref(false)
 
-const selectedProvider = ref<ProviderKey>(store.provider as ProviderKey)
+// 🔧 ИСПРАВЛЕНИЕ 1: Гарантируем, что selectedProvider всегда имеет корректный тип
+const selectedProvider = ref<ProviderKey>(
+	store.provider && providerList.some(p => p.key === store.provider) 
+		? store.provider as ProviderKey 
+		: 'groq'
+)
 
 const options = computed(() => store.availableModels)
 
 // LABELS
 const currentProviderLabel = computed(() => {
-	return providerList.find(p => p.key === selectedProvider.value)?.name
+	const provider = providerList.find(p => p.key === selectedProvider.value)
+	return provider?.name || 'Выберите провайдера'
 })
 
 const selectedModelLabel = computed(() => {
@@ -174,7 +180,6 @@ function toggleModel() {
 function selectProvider(p: ProviderKey) {
 	selectedProvider.value = p
 	store.changeProvider(p)
-
 	isProviderOpen.value = false
 }
 
@@ -188,25 +193,46 @@ function truncate(text: string, max = 40) {
 	return text.length > max ? text.slice(0, max) + '…' : text
 }
 
-// LIMITS
-const limits = computed(() => getProviderLimits(selectedProvider.value))
-const MAX_LIMITS = computed(() => {
-	if (selectedProvider.value === 'groq') {
-		return { perMinute: 30, perDay: 1000 } // пример для Groq
+// 🔧 ИСПРАВЛЕНИЕ 2: Добавляем проверку на undefined для limits
+const limits = computed(() => {
+	const lim = getProviderLimits(selectedProvider.value)
+	return {
+		perMinute: lim?.perMinute ?? 0,
+		perDay: lim?.perDay ?? 0
 	}
+})
 
+// 🔧 ИСПРАВЛЕНИЕ 3: Определяем типы для лимитов
+interface Limits {
+	perMinute: number
+	perDay: number
+}
+
+const MAX_LIMITS = computed<Limits>(() => {
+	if (selectedProvider.value === 'groq') {
+		return { perMinute: 30, perDay: 1000 }
+	}
 	if (selectedProvider.value === 'openrouter') {
 		return { perMinute: 20, perDay: 50 }
 	}
-
 	return { perMinute: 20, perDay: 50 }
 })
 
-const showLimits = computed(() => !!limits.value)
+const showLimits = computed(() => {
+	return limits.value.perMinute > 0 || limits.value.perDay > 0
+})
 
-const perMinutePercent = computed(() => Math.min(100, (limits.value.perMinute / MAX_LIMITS.value.perMinute) * 100))
+const perMinutePercent = computed(() => {
+	const max = MAX_LIMITS.value.perMinute
+	if (max === 0) return 0
+	return Math.min(100, (limits.value.perMinute / max) * 100)
+})
 
-const perDayPercent = computed(() => Math.min(100, (limits.value.perDay / MAX_LIMITS.value.perDay) * 100))
+const perDayPercent = computed(() => {
+	const max = MAX_LIMITS.value.perDay
+	if (max === 0) return 0
+	return Math.min(100, (limits.value.perDay / max) * 100)
+})
 
 function getProgressColor(percent: number) {
 	if (percent > 50) return '#34D399'
@@ -214,12 +240,21 @@ function getProgressColor(percent: number) {
 	return '#F87171'
 }
 
-// STATUS ICON
-function getModelStatusIcon(model: { value: string }) {
+// 🔧 ИСПРАВЛЕНИЕ 4: Улучшаем типизацию getModelStatusIcon
+interface ModelOption {
+	value: string
+	label?: string
+}
+
+function getModelStatusIcon(model: ModelOption): string {
 	if (selectedProvider.value === 'openrouter') {
-		if (limits.value.perMinute <= 0 || limits.value.perDay <= 0) return '🔴'
+		if (limits.value.perMinute <= 0 || limits.value.perDay <= 0) {
+			return '🔴'
+		}
 	}
-	return store.availableModels.some(m => m.value === model.value) ? '🟢' : '🔴'
+	// Проверяем, доступна ли модель
+	const isAvailable = store.availableModels.some(m => m.value === model.value)
+	return isAvailable ? '🟢' : '🔴'
 }
 
 // CLICK OUTSIDE
