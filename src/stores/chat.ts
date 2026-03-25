@@ -265,7 +265,7 @@ export const useChatStore = defineStore('chat', () => {
 			`Технические неполадки. Наши инженеры уже работают над исправлением. Приносим извинения за неудобства.`,
 			`Не могу ответить на ваш вопрос прямо сейчас. Пожалуйста, попробуйте позже или задайте другой вопрос.`,
 		]
-		return responses[Math.floor(Math.random() * responses.length)]
+		return responses[Math.floor(Math.random() * responses.length)] || ''
 	}
 
 	/* ---------- Основная функция отправки сообщения ---------- */

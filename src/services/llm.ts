@@ -335,7 +335,7 @@ export function getFallbackResponse(userInput: string): string {
 		`Технические неполадки. Наши инженеры уже работают над исправлением.`,
 		`Не могу ответить сейчас. Попробуйте позже или задайте другой вопрос.`,
 	]
-	return responses[Math.floor(Math.random() * responses.length)]
+	return responses[Math.floor(Math.random() * responses.length)] || ''
 }
 
 export async function sendMessageWithGuaranteedResponse(

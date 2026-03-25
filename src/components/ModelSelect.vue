@@ -127,7 +127,13 @@ import { getProviderLimits } from '@/services/llm'
 import QRCode from './QrCode.vue'
 import AuthModal from './AuthModal.vue'
 
-type ProviderKey = 'groq' | 'openrouter'
+// PROVIDERS
+const providerList = [
+	{ key: 'groq', name: 'Groq ⚡' },
+	{ key: 'openrouter', name: 'OpenRouter 🌐' },
+] as const
+
+type ProviderKey = (typeof providerList)[number]['key']
 
 const store = useChatStore()
 
@@ -140,13 +146,7 @@ const modelRef = ref<HTMLElement | null>(null)
 
 const showAuthModal = ref(false)
 
-// PROVIDERS
-const providerList = [
-	{ key: 'groq', name: 'Groq ⚡' },
-	{ key: 'openrouter', name: 'OpenRouter 🌐' },
-]
-
-const selectedProvider = ref<ProviderKey>(store.provider)
+const selectedProvider = ref<ProviderKey>(store.provider as ProviderKey)
 
 const options = computed(() => store.availableModels)
 
@@ -174,7 +174,7 @@ function toggleModel() {
 function selectProvider(p: ProviderKey) {
 	selectedProvider.value = p
 	store.changeProvider(p)
-	updateLimits()
+
 	isProviderOpen.value = false
 }
 
@@ -214,10 +214,6 @@ function getProgressColor(percent: number) {
 	return '#F87171'
 }
 
-function updateLimits() {
-	limits.value = getProviderLimits(selectedProvider.value)
-}
-
 // STATUS ICON
 function getModelStatusIcon(model: { value: string }) {
 	if (selectedProvider.value === 'openrouter') {
@@ -239,7 +235,6 @@ function handleClickOutside(e: MouseEvent) {
 
 // LIFECYCLE
 onMounted(() => {
-	updateLimits()
 	document.addEventListener('click', handleClickOutside)
 })
 

@@ -144,7 +144,7 @@ class GroqProvider implements ProviderInterface {
 			return data.choices?.[0]?.message?.content || data.response?.choices?.[0]?.delta?.content || ''
 		} catch (error) {
 			console.error('Ошибка отправки сообщения:', error)
-			if (error instanceof AxiosError) {
+			if (axios.isAxiosError(error)) {
 				throw new Error(`Ошибка API: ${error.response?.data?.error?.message || error.message}`)
 			}
 			throw error
