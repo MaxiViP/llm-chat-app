@@ -108,24 +108,26 @@ const close = () => {
 	emit('close')
 }
 
-const loginWith = async (provider: 'google' | 'yandex') => {
-	await authStore.login(provider)
+// ==================== GOOGLE & YANDEX ====================
+const loginWith = (provider: 'google' | 'yandex') => {
+	if (provider === 'google') {
+		window.location.href = `${import.meta.env.VITE_API_URL}/auth/google`
+	} else if (provider === 'yandex') {
+		window.location.href = `${import.meta.env.VITE_API_URL}/auth/yandex`
+	}
 	close()
-	emit('login')
 }
 
-// ✅ вход суперпользователя
+// ==================== SUPERUSER ====================
 const loginAsSuperuser = async () => {
 	try {
 		loading.value = true
-		const res = await api.post('/auth/superuser') // предполагаемый эндпоинт
+		const res = await api.post('/auth/superuser')
 		const { user, token } = res.data
 
-		// сохраняем
 		localStorage.setItem('user', JSON.stringify(user))
 		localStorage.setItem('token', token)
 
-		// обновляем store
 		authStore.user = user
 		authStore.token = token
 
@@ -137,20 +139,20 @@ const loginAsSuperuser = async () => {
 		loading.value = false
 	}
 }
-
-// ✅ отправка кода
+const lastCodeSent = ref(0)
+// ==================== EMAIL + CODE ====================
 const loginWithEmail = async () => {
+	if (Date.now() - lastCodeSent.value < 30000) {
+		alert('Подождите 30 секунд перед повторной отправкой')
+		return
+	}
 	if (!email.value) return
 
 	try {
 		loading.value = true
-
 		pendingEmail.value = email.value
 
-		await api.post('/auth/send-code', {
-			email: email.value,
-		})
-
+		await api.post('/auth/send-code', { email: email.value })
 		showCodeInput.value = true
 	} catch (err: any) {
 		alert(err.response?.data?.error || 'Ошибка отправки кода')
@@ -159,9 +161,8 @@ const loginWithEmail = async () => {
 	}
 }
 
-// ✅ проверка кода
 const verifyCode = async () => {
-	if (!code.value) return
+	if (!code.value || !pendingEmail.value) return
 
 	try {
 		loading.value = true
@@ -173,18 +174,16 @@ const verifyCode = async () => {
 
 		const { user, token } = res.data
 
-		// сохраняем
 		localStorage.setItem('user', JSON.stringify(user))
 		localStorage.setItem('token', token)
 
-		// обновляем store
 		authStore.user = user
 		authStore.token = token
 
 		close()
 		emit('login')
 	} catch (err: any) {
-		alert(err.response?.data?.error || 'Неверный код')
+		alert(err.response?.data?.error || 'Неверный или истёкший код')
 	} finally {
 		loading.value = false
 	}
