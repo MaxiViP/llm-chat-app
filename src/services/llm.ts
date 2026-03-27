@@ -1,4 +1,7 @@
 import axios from 'axios'
+import { useAuthStore } from '@/stores/auth'
+import { currentChatId } from '@/stores/chat'
+import { ref } from 'vue'   // если используешь currentChatId как ref
 
 export interface Message {
 	role: 'user' | 'assistant' | 'system'
@@ -242,29 +245,86 @@ const fallbackOrder: ProviderKey[] = ['groq', 'openrouter']
 
 export async function sendMessageStream(
 	messages: Message[],
-	model: string,
+	model: string = 'llama-3.3-70b-versatile',
 	onChunk: (chunk: string) => void,
+	onDone?: (fullResponse: string) => void,
 ): Promise<void> {
-	const order = [currentProvider, ...fallbackOrder.filter(k => k !== currentProvider)]
-	let lastError: unknown = null
+	const authStore = useAuthStore() // ← теперь правильно
 
-	for (const key of order) {
-		const provider = providers[key]
-		try {
-			const resolvedModel = resolveModel(model, key)
-			console.log(`🚀 Пробуем ${provider.displayName} → ${resolvedModel}`)
-			await provider.sendStream(messages, resolvedModel, onChunk)
-			console.log(`✅ Успех через ${provider.displayName}`)
-			return
-		} catch (err) {
-			console.warn(`❌ ${provider.displayName} упал:`, err)
-			lastError = err
-		}
+	if (!currentChatId.value) {
+		// ← используем .value
+		throw new Error('Сначала выберите или создайте чат')
 	}
 
-	throw lastError ?? new Error('Все провайдеры упали')
-}
+	if (!authStore.token) {
+		throw new Error('Пользователь не авторизован')
+	}
 
+	const userMessage = messages[messages.length - 1]
+	if (!userMessage || userMessage.role !== 'user') {
+		throw new Error('Последнее сообщение должно быть от пользователя')
+	}
+
+	try {
+		const response = await fetch(`${import.meta.env.VITE_API_URL}/chats/${currentChatId.value}/messages/stream`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${authStore.token}`,
+			},
+			body: JSON.stringify({
+				content: userMessage.content,
+				model,
+			}),
+		})
+
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({}))
+			if (response.status === 402) {
+				throw new Error('Недостаточно средств на балансе')
+			}
+			throw new Error(errorData.error || `Ошибка сервера: ${response.status}`)
+		}
+
+		const reader = response.body!.getReader()
+		const decoder = new TextDecoder()
+		let buffer = ''
+		let fullResponse = ''
+
+		while (true) {
+			const { done, value } = await reader.read()
+			if (done) break
+
+			buffer += decoder.decode(value, { stream: true })
+
+			let newlineIdx: number
+			while ((newlineIdx = buffer.indexOf('\n')) >= 0) {
+				const line = buffer.slice(0, newlineIdx).trim()
+				buffer = buffer.slice(newlineIdx + 1)
+
+				if (line.startsWith('data: ')) {
+					const payload = line.slice(6).trim()
+					if (!payload || payload === '[DONE]') continue
+
+					try {
+						const data = JSON.parse(payload)
+						if (data.delta) {
+							fullResponse += data.delta
+							onChunk(data.delta)
+						}
+						if (data.done) {
+							onDone?.(fullResponse)
+							return
+						}
+					} catch (_) {}
+				}
+			}
+		}
+	} catch (error: any) {
+		console.error('Ошибка стриминга:', error)
+		throw error
+	}
+}
 export async function sendMessage(messages: Message[], model: string): Promise<string> {
 	let result = ''
 	await sendMessageStream(messages, model, chunk => (result += chunk))

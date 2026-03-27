@@ -1,14 +1,15 @@
-// stores/auth.ts
+// src/stores/auth.ts
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import api from '@/services/api'
 
 export interface User {
 	id: string
 	email: string
 	name: string
-	avatar?: string
+	avatarUrl?: string
 	balance: number
-	provider: 'google' | 'yandex' | 'email'
+	provider?: 'google' | 'yandex' | 'email' | null
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -17,7 +18,6 @@ export const useAuthStore = defineStore('auth', () => {
 
 	const isAuthenticated = computed(() => !!user.value)
 
-	// Инициализация из localStorage
 	function init() {
 		const storedUser = localStorage.getItem('user')
 		const storedToken = localStorage.getItem('token')
@@ -27,77 +27,68 @@ export const useAuthStore = defineStore('auth', () => {
 		}
 	}
 
-	// Вход
-	async function login(provider: 'google' | 'yandex' | 'email', email?: string) {
-		// Ваша логика входа
-		let newUser: User | null = null
-
-		if (provider === 'google') {
-			newUser = {
-				id: 'google_' + Date.now(),
-				email: 'user@gmail.com',
-				name: 'Google User',
-				avatar: 'https://via.placeholder.com/40',
-				balance: 100,
-				provider: 'google',
-			}
-		} else if (provider === 'yandex') {
-			newUser = {
-				id: 'yandex_' + Date.now(),
-				email: 'user@yandex.ru',
-				name: 'Yandex User',
-				avatar: 'https://via.placeholder.com/40',
-				balance: 100,
-				provider: 'yandex',
-			}
-		} else if (provider === 'email') {
-			if (!email) return null
-
-			const safeEmail: string = email
-
-			newUser = {
-				id: 'email_' + Date.now(),
-				email: safeEmail,
-				name: (safeEmail.split('@')[0] || '').replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-				balance: 0,
-				provider: 'email',
-			}
-		}
-
-		if (newUser) {
-			user.value = newUser
-			token.value = 'mock-token'
-			localStorage.setItem('user', JSON.stringify(newUser))
-			localStorage.setItem('token', 'mock-token')
-		}
-		return newUser
+	async function register(email: string, password: string, name?: string) {
+		const { data } = await api.post('/auth/register', { email, password, name })
+		user.value = data.user
+		token.value = data.token
+		localStorage.setItem('user', JSON.stringify(data.user))
+		localStorage.setItem('token', data.token)
+		return data.user
 	}
 
-	// Выход
+	// Вход (обновлённая версия)
+	async function login(provider: 'google' | 'yandex' | 'email', email?: string, password?: string) {
+		if (provider === 'google') {
+			window.location.href = `${import.meta.env.VITE_API_URL}/auth/google`
+			return null
+		}
+
+		if (provider === 'email') {
+			if (!email || !password) {
+				console.error('Email и пароль обязательны')
+				return null
+			}
+
+			try {
+				const { data } = await api.post('/auth/login', { email, password })
+				user.value = data.user
+				token.value = data.token
+				localStorage.setItem('user', JSON.stringify(data.user))
+				localStorage.setItem('token', data.token)
+				return data.user
+			} catch (err: any) {
+				console.error('Ошибка логина:', err.response?.data?.error || err.message)
+				return null
+			}
+		}
+
+		return null
+	}
+
+	async function loginWithGoogle() {
+		window.location.href = `${import.meta.env.VITE_API_URL}/auth/google`
+	}
+ 
+
+	async function handleAuthCallback() {
+		const urlParams = new URLSearchParams(window.location.search)
+		const tokenFromUrl = urlParams.get('token')
+
+		if (tokenFromUrl) {
+			localStorage.setItem('token', tokenFromUrl)
+			token.value = tokenFromUrl
+
+			const { data } = await api.get('/auth/me')
+			user.value = data
+			localStorage.setItem('user', JSON.stringify(data))
+		}
+	}
+
 	function logout() {
 		user.value = null
 		token.value = null
 		localStorage.removeItem('user')
 		localStorage.removeItem('token')
-		// Можно также очистить историю транзакций
-		localStorage.removeItem('transactions')
-	}
-
-	// Обновление баланса
-	function updateBalance(newBalance: number) {
-		if (user.value) {
-			user.value.balance = newBalance
-			localStorage.setItem('user', JSON.stringify(user.value))
-		}
-	}
-
-	// Обновление профиля
-	function updateProfile(name: string, email: string) {
-		if (user.value) {
-			user.value.name = name
-			user.value.email = email
-			localStorage.setItem('user', JSON.stringify(user.value))
-		}
 	}
 
 	return {
@@ -105,9 +96,10 @@ export const useAuthStore = defineStore('auth', () => {
 		token,
 		isAuthenticated,
 		init,
+		register,
 		login,
+		loginWithGoogle,
+		handleAuthCallback,
 		logout,
-		updateBalance,
-		updateProfile,
 	}
 })

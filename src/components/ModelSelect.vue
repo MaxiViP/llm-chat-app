@@ -106,7 +106,7 @@
 		</div>
 
 		<!-- ЛИМИТЫ -->
-		<div v-if="showLimits" class=" limits mt-2 space-y-1 text-xs">
+		<div v-if="showLimits" class="limits mt-2 space-y-1 text-xs">
 			<div class="flex justify-between">
 				<span>Лимит/мин: {{ limits.perMinute }} / {{ MAX_LIMITS.perMinute }}</span>
 				<span>{{ Math.round(perMinutePercent) }}%</span>
@@ -150,11 +150,6 @@ import { useAuthStore } from '@/stores/auth'
 import QRCode from './QrCode.vue'
 import AuthModal from './AuthModal.vue'
 import { getProviderLimits } from '@/services/llm'
-
-// interface Provider {
-// 	key: string
-// 	name: string
-// }
 
 const providerList = [
 	{ key: 'groq', name: 'Groq ⚡' },
@@ -204,7 +199,7 @@ function toggleModel() {
 
 function selectProvider(p: ProviderKey) {
 	selectedProvider.value = p
-	store.changeProvider(p)
+	console.log('Смена провайдера отключена - используется бэкенд')
 	isProviderOpen.value = false
 }
 
@@ -305,7 +300,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 .model-select {
 	width: 100%;
 }
-.limits  {
+.limits {
 	display: none;
 }
 
