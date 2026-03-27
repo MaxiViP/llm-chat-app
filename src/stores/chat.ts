@@ -377,7 +377,6 @@ export const useChatStore = defineStore('chat', () => {
 		}
 	}
 
-	/* ---------- Очистка чата ---------- */
 	function clearChat() {
 		messages.value = [
 			{
