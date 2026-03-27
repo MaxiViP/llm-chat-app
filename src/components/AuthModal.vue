@@ -26,6 +26,22 @@
 						<span>Войти через Яндекс</span>
 					</button>
 
+					<!-- Кнопка суперпользователя -->
+					<button
+						@click="loginAsSuperuser"
+						:disabled="loading"
+						class="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition disabled:opacity-50"
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+							<path
+								fill-rule="evenodd"
+								d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-1 1v8a1 1 0 001 1h10a1 1 0 001-1V8a1 1 0 00-1-1h-1V6a4 4 0 00-4-4zm0 2a2 2 0 00-2 2v1h4V6a2 2 0 00-2-2zm0 7a1 1 0 100 2 1 1 0 000-2z"
+								clip-rule="evenodd"
+							/>
+						</svg>
+						<span>Войти как суперпользователь</span>
+					</button>
+
 					<div class="relative">
 						<div class="absolute inset-0 flex items-center">
 							<div class="w-full border-t"></div>
@@ -96,6 +112,30 @@ const loginWith = async (provider: 'google' | 'yandex') => {
 	await authStore.login(provider)
 	close()
 	emit('login')
+}
+
+// ✅ вход суперпользователя
+const loginAsSuperuser = async () => {
+	try {
+		loading.value = true
+		const res = await api.post('/auth/superuser') // предполагаемый эндпоинт
+		const { user, token } = res.data
+
+		// сохраняем
+		localStorage.setItem('user', JSON.stringify(user))
+		localStorage.setItem('token', token)
+
+		// обновляем store
+		authStore.user = user
+		authStore.token = token
+
+		close()
+		emit('login')
+	} catch (err: any) {
+		alert(err.response?.data?.error || 'Ошибка входа суперпользователя')
+	} finally {
+		loading.value = false
+	}
 }
 
 // ✅ отправка кода
