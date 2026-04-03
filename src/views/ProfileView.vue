@@ -8,8 +8,18 @@
             @click="goBack"
             class="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors duration-200 group"
           >
-            <svg class="w-5 h-5 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            <svg
+              class="w-5 h-5 transform group-hover:-translate-x-1 transition-transform"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M10 19l-7-7m0 0l7-7m-7 7h18"
+              />
             </svg>
             <span>Назад</span>
           </button>
@@ -24,16 +34,26 @@
           <!-- Карточка пользователя -->
           <div class="bg-white rounded-xl shadow-sm p-6">
             <div class="flex items-center space-x-4">
-              <div class="w-16 h-16 rounded-full bg-primary-100 flex items-center justify-center text-2xl text-primary-600">
+              <div
+                class="w-16 h-16 rounded-full bg-primary-100 flex items-center justify-center text-2xl text-primary-600"
+              >
                 {{ userInitials }}
               </div>
               <div>
-                <h2 class="text-lg font-semibold text-gray-900">{{ authStore.user?.name || 'Пользователь' }}</h2>
-                <p class="text-gray-500 text-sm">{{ authStore.user?.email || 'email@example.com' }}</p>
+                <h2 class="text-lg font-semibold text-gray-900">
+                  {{ authStore.user?.name || 'Пользователь' }}
+                </h2>
+                <p class="text-gray-500 text-sm">
+                  {{ authStore.user?.email || 'email@example.com' }}
+                </p>
                 <div class="mt-1 text-xs text-gray-400">
-                  {{ authStore.user?.provider === 'google' ? 'Google аккаунт' :
-                     authStore.user?.provider === 'yandex' ? 'Яндекс аккаунт' :
-                     'Email аккаунт' }}
+                  {{
+                    authStore.user?.provider === 'google'
+                      ? 'Google аккаунт'
+                      : authStore.user?.provider === 'yandex'
+                        ? 'Яндекс аккаунт'
+                        : 'Email аккаунт'
+                  }}
                 </div>
               </div>
             </div>
@@ -42,10 +62,7 @@
                 <span class="text-gray-600">Баланс</span>
                 <span class="text-2xl font-bold text-primary-600">{{ formattedBalance }} ₽</span>
               </div>
-              <button
-                @click="openDepositModal = true"
-                class="mt-4 w-full btn-primary"
-              >
+              <button @click="openDepositModal = true" class="mt-4 w-full btn-primary">
                 Пополнить
               </button>
             </div>
@@ -106,21 +123,11 @@
               <div class="space-y-4">
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">Имя</label>
-                  <input
-                    v-model="profileForm.name"
-                    type="text"
-                    class="input"
-                    required
-                  />
+                  <input v-model="profileForm.name" type="text" class="input" required />
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input
-                    v-model="profileForm.email"
-                    type="email"
-                    class="input"
-                    required
-                  />
+                  <input v-model="profileForm.email" type="email" class="input" required />
                 </div>
                 <div>
                   <button type="submit" class="btn-primary">Сохранить изменения</button>
@@ -180,10 +187,34 @@
                   required
                 />
                 <div class="mt-2 flex gap-2 flex-wrap">
-                  <button type="button" @click="depositAmount = 100" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">100 ₽</button>
-                  <button type="button" @click="depositAmount = 500" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">500 ₽</button>
-                  <button type="button" @click="depositAmount = 1000" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">1000 ₽</button>
-                  <button type="button" @click="depositAmount = 5000" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">5000 ₽</button>
+                  <button
+                    type="button"
+                    @click="depositAmount = 100"
+                    class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200"
+                  >
+                    100 ₽
+                  </button>
+                  <button
+                    type="button"
+                    @click="depositAmount = 500"
+                    class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200"
+                  >
+                    500 ₽
+                  </button>
+                  <button
+                    type="button"
+                    @click="depositAmount = 1000"
+                    class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200"
+                  >
+                    1000 ₽
+                  </button>
+                  <button
+                    type="button"
+                    @click="depositAmount = 5000"
+                    class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200"
+                  >
+                    5000 ₽
+                  </button>
                 </div>
               </div>
               <div>
@@ -196,7 +227,13 @@
               </div>
               <div class="flex gap-3 pt-2">
                 <button type="submit" class="btn-primary flex-1">Пополнить</button>
-                <button type="button" @click="openDepositModal = false" class="btn-secondary flex-1">Отмена</button>
+                <button
+                  type="button"
+                  @click="openDepositModal = false"
+                  class="btn-secondary flex-1"
+                >
+                  Отмена
+                </button>
               </div>
             </div>
           </form>
@@ -236,25 +273,27 @@ const userInitials = computed(() => {
 })
 
 // Транзакции
-const transactions = ref<Array<{
-  id: number
-  date: Date
-  amount: number
-  description: string
-  status: string
-  type: string
-}>>([])
+const transactions = ref<
+  Array<{
+    id: number
+    date: Date
+    amount: number
+    description: string
+    status: string
+    type: string
+  }>
+>([])
 
 const totalDeposits = computed(() => {
   return transactions.value
-    .filter(tx => tx.type === 'deposit' && tx.amount > 0)
+    .filter((tx) => tx.type === 'deposit' && tx.amount > 0)
     .reduce((sum, tx) => sum + tx.amount, 0)
     .toFixed(2)
 })
 
 const totalUsage = computed(() => {
   return transactions.value
-    .filter(tx => tx.type === 'usage' && tx.amount < 0)
+    .filter((tx) => tx.type === 'usage' && tx.amount < 0)
     .reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
     .toFixed(2)
 })
@@ -283,7 +322,7 @@ const handleDeposit = () => {
   const methodNames: Record<string, string> = {
     card: 'Банковская карта',
     sbp: 'СБП',
-    yoomoney: 'ЮMoney'
+    yoomoney: 'ЮMoney',
   }
 
   transactions.value.unshift({
@@ -292,7 +331,7 @@ const handleDeposit = () => {
     amount: depositAmount.value,
     description: `Пополнение через ${methodNames[depositMethod.value]}`,
     status: 'completed',
-    type: 'deposit'
+    type: 'deposit',
   })
 
   if (authStore.user) {
@@ -312,19 +351,25 @@ const handleLogout = () => {
   }
 }
 
-const formatDate = (date: Date) => {
+const formatDate = (date: Date | string) => {
+  const d = date instanceof Date ? date : new Date(date)
+  if (isNaN(d.getTime())) return '—' // вместо ошибки
   return new Intl.DateTimeFormat('ru-RU', {
     day: 'numeric',
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
-  }).format(date)
+  }).format(d)
 }
 
 const loadTransactions = () => {
   const saved = localStorage.getItem('transactions')
   if (saved) {
-    transactions.value = JSON.parse(saved)
+    const parsed = JSON.parse(saved)
+    transactions.value = parsed.map((tx: any) => ({
+      ...tx,
+      date: tx.date ? new Date(tx.date) : new Date(), // безопасно
+    }))
   } else {
     transactions.value = [
       {
@@ -333,7 +378,7 @@ const loadTransactions = () => {
         amount: 500,
         description: 'Пополнение баланса',
         status: 'completed',
-        type: 'deposit'
+        type: 'deposit',
       },
       {
         id: 2,
@@ -341,8 +386,8 @@ const loadTransactions = () => {
         amount: -150,
         description: 'Использование API',
         status: 'completed',
-        type: 'usage'
-      }
+        type: 'usage',
+      },
     ]
   }
 }
@@ -351,9 +396,13 @@ const saveTransactions = () => {
   localStorage.setItem('transactions', JSON.stringify(transactions.value))
 }
 
-watch(transactions, () => {
-  saveTransactions()
-}, { deep: true })
+watch(
+  transactions,
+  () => {
+    saveTransactions()
+  },
+  { deep: true },
+)
 
 onMounted(() => {
   loadTransactions()
@@ -365,8 +414,12 @@ onMounted(() => {
 
 <style scoped>
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes scaleIn {

@@ -70,7 +70,7 @@ const isTyping = ref(false)
 const isComplete = ref(false)
 
 
-let typingInterval: NodeJS.Timeout | null = null
+let typingInterval: ReturnType<typeof setInterval> | null = null
 let currentIndex = 0
 
 // Получаем актуальные лимиты
