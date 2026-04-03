@@ -50,11 +50,17 @@ export const useAuthStore = defineStore('auth', () => {
         balance: 100,
         provider: 'yandex',
       }
-    } else if (provider === 'email' && email) {
+    } else if (provider === 'email') {
+      if (!email) return null
+
+      const safeEmail: string = email
+
       newUser = {
         id: 'email_' + Date.now(),
-        email,
-        name: email.split('@')[0],
+        email: safeEmail,
+        name: (safeEmail.split('@')[0] || '')
+          .replace(/[._]/g, ' ')
+          .replace(/\b\w/g, (c) => c.toUpperCase()),
         balance: 0,
         provider: 'email',
       }

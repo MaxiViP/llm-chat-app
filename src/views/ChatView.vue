@@ -1,18 +1,18 @@
 <template>
   <div class="chat-view flex flex-col h-screen bg-gray-50">
     <!-- Header -->
-    <div class="header flex justify-between items-center p-4 bg-white border-b shadow-sm">
-      <div class="flex items-center gap-3">
+    <header class="flex justify-center items-center p-2 bg-white border-b shadow-sm w-full sticky top-0 z-10">
+      <div class="flex items-center gap-3 flex-1">
         <div v-if="store.isModelsLoading" class="text-gray-500 text-sm">Загрузка моделей...</div>
         <ModelSelect v-else />
       </div>
 
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 ml-auto flex-shrink-0">
         <!-- QR-код кнопка -->
         <button
           v-if="!authStore.isAuthenticated"
           @click="showAuthModal = true"
-          class="flex items-center gap-2 px-3 py-2 bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition"
+          class="flex items-center gap-2 px-3 py-2 bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition md:pr-4"
         >
           <span>👤</span>
           <span class="hidden sm:inline">Войти</span>
@@ -31,7 +31,7 @@
           <span class="hidden sm:inline text-sm text-gray-700">{{ authStore.user?.name }}</span>
         </RouterLink>
       </div>
-    </div>
+    </header>
 
     <!-- Messages -->
     <div ref="messagesContainer" class="flex-1 overflow-y-auto flex flex-col gap-2 p-4">
@@ -155,75 +155,26 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.header {
-  background-color: white;
-  width: 100%;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
 /* Анимации */
 @keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
+
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
+
 @keyframes bounce {
-  0%,
-  80%,
-  100% {
-    transform: scale(0.6);
-    opacity: 0.5;
-  }
-  40% {
-    transform: scale(1);
-    opacity: 1;
-  }
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+  40% { transform: scale(1); opacity: 1; }
 }
 
-.animate-slideUp {
-  animation: slideUp 0.3s ease-out forwards;
-}
-.animate-fadeIn {
-  animation: fadeIn 0.5s ease-out forwards;
-}
-.animate-bounce {
-  animation: bounce 1.4s infinite ease-in-out both;
-}
-.delay-75 {
-  animation-delay: 0.1s;
-}
-.delay-150 {
-  animation-delay: 0.2s;
-}
+.animate-slideUp { animation: slideUp 0.3s ease-out forwards; }
+.animate-fadeIn { animation: fadeIn 0.5s ease-out forwards; }
+.animate-bounce { animation: bounce 1.4s infinite ease-in-out both; }
 
-/* Скроллбар */
-.messages-container::-webkit-scrollbar {
-  width: 6px;
-}
-.messages-container::-webkit-scrollbar-track {
-  background: #f3f4f6;
-  border-radius: 9999px;
-}
-.messages-container::-webkit-scrollbar-thumb {
-  background: #9ca3af;
-  border-radius: 9999px;
-}
-.messages-container::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
-}
+.delay-75 { animation-delay: 0.1s; }
+.delay-150 { animation-delay: 0.2s; }
 </style>

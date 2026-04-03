@@ -1,191 +1,306 @@
 <template>
-  <div class="model-select p-1 bg-gray-50 border-b border-gray-200 flex flex-col gap-2">
-    <div class="flex justify-between items-center">
-      <label class="font-medium text-gray-700">Провайдер и модель:</label>
+	<div class="model-select p-2 bg-gray-50 border-b border-gray-200 flex flex-col gap-2">
+		<!-- Header -->
+		<div class="flex justify-between items-center">
+			<label class="font-medium text-gray-700">Провайдер и модель:</label>
 
-      <div class="flex items-center gap-3">
-        <!-- QR-код кнопка -->
-        <QRCode />
+			<div class="flex items-center gap-3">
+				<QRCode />
 
-        <!-- Статус ассистента -->
-        <span
-          :class="[
-            'px-2 py-1 rounded-full text-xs sm:text-sm font-medium transition-colors',
-            store.isLoading
-              ? 'bg-yellow-100 text-yellow-800 animate-pulse'
-              : 'bg-green-100 text-green-800',
-          ]"
-        >
-          {{ store.isLoading ? '💭 думает…' : '✓' }}
-        </span>
-      </div>
-    </div>
+				<span
+					:class="[
+						'px-2 py-1 rounded-full text-xs sm:text-sm font-medium transition-colors',
+						store.isLoading ? 'bg-yellow-100 text-yellow-800 animate-pulse' : 'bg-green-100 text-green-800',
+					]"
+				>
+					{{ store.isLoading ? '💭 думает…' : '✓' }}
+				</span>
+			</div>
+		</div>
 
-    <div class="flex flex-col sm:flex-row gap-3">
-      <!-- Провайдер -->
-      <div class="relative w-full sm:w-48">
-        <select
-          v-model="selectedProvider"
-          @change="onProviderChange"
-          class="w-full px-3 py-2 border rounded-lg bg-white text-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 appearance-none cursor-pointer transition"
-        >
-          <option v-for="p in providerList" :key="p.key" :value="p.key">
-            {{ p.name }}
-          </option>
-        </select>
-        <span class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500"
-          >▾</span
-        >
-      </div>
+		<!-- Dropdowns -->
+		<div class="flex flex-col sm:flex-row gap-3">
+			<!-- PROVIDER -->
+			<div class="relative w-full sm:w-48" ref="providerRef">
+				<button
+					@click="toggleProvider"
+					class="w-full px-3 py-2 border rounded-lg bg-white text-sm flex justify-between items-center"
+				>
+					<span class="truncate">
+						{{ currentProviderLabel }}
+					</span>
+					<span>▾</span>
+				</button>
 
-      <!-- Модель -->
-      <div class="relative flex-1">
-        <select
-          v-model="modelValue"
-          :disabled="!options.length"
-          class="w-full px-3 py-2 border rounded-lg bg-white disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-400 appearance-none cursor-pointer transition"
-        >
-          <option v-for="m in options" :key="m.value" :value="m.value">
-            {{ getModelStatusIcon(m) }} {{ m.label }}
-          </option>
-        </select>
-        <span class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500"
-          >▾</span
-        >
-      </div>
-    </div>
+				<div
+					v-if="isProviderOpen"
+					class="absolute z-50 mt-1 w-full bg-white border rounded-lg shadow max-h-60 overflow-auto"
+				>
+					<div
+						v-for="p in providerList"
+						:key="p.key"
+						@click="selectProvider(p.key)"
+						class="px-3 py-2 cursor-pointer hover:bg-gray-100"
+					>
+						{{ p.name }}
+					</div>
+				</div>
+			</div>
 
-    <!-- 🔹 Лимиты OpenRouter -->
-    <div v-if="showLimits" class="mt-2 space-y-1 text-xs">
-      <div class="flex justify-between">
-        <span>Лимит запросов/мин: {{ limits.perMinute }} / {{ MAX_LIMITS.perMinute }}</span>
-        <span class="text-gray-500">{{ Math.round(perMinutePercent) }}%</span>
-      </div>
-      <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-        <div
-          class="h-full rounded-full transition-all duration-300"
-          :style="{
-            width: `${perMinutePercent}%`,
-            backgroundColor: getProgressColor(perMinutePercent),
-          }"
-        ></div>
-      </div>
+			<!-- MODEL -->
+			<div class="relative flex-1" ref="modelRef">
+				<button
+					@click="toggleModel"
+					class="w-full px-3 py-2 border rounded-lg bg-white text-sm flex justify-between items-center disabled:bg-gray-100"
+					:disabled="!options.length"
+				>
+					<span class="truncate">
+						{{ selectedModelLabel }}
+					</span>
+					<span>▾</span>
+				</button>
 
-      <div class="flex justify-between mt-2">
-        <span>Лимит запросов/день: {{ limits.perDay }} / {{ MAX_LIMITS.perDay }}</span>
-        <span class="text-gray-500">{{ Math.round(perDayPercent) }}%</span>
-      </div>
-      <div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-        <div
-          class="h-full rounded-full transition-all duration-300"
-          :style="{
-            width: `${perDayPercent}%`,
-            backgroundColor: getProgressColor(perDayPercent),
-          }"
-        ></div>
-      </div>
-    </div>
+				<div
+					v-if="isModelOpen"
+					class="absolute z-50 mt-1 w-full bg-white border rounded-lg shadow max-h-72 overflow-auto"
+				>
+					<div
+						v-for="m in options"
+						:key="m.value"
+						@click="selectModel(m.value)"
+						class="px-3 py-2 cursor-pointer hover:bg-gray-100 flex justify-between items-center"
+					>
+						<span class="truncate">
+							{{ truncate(m.label) }}
+						</span>
 
-    <!-- Модальное окно авторизации -->
-    <AuthModal v-model:visible="showAuthModal" @login="handleLogin" />
-  </div>
+						<span class="ml-2">
+							{{ getModelStatusIcon(m) }}
+						</span>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- LIMITS -->
+		<div v-if="showLimits" class="mt-2 space-y-1 text-xs">
+			<div class="flex justify-between">
+				<span>Лимит/мин: {{ limits.perMinute }} / {{ MAX_LIMITS.perMinute }}</span>
+				<span>{{ Math.round(perMinutePercent) }}%</span>
+			</div>
+
+			<div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+				<div
+					class="h-full transition-all"
+					:style="{
+						width: `${perMinutePercent}%`,
+						backgroundColor: getProgressColor(perMinutePercent),
+					}"
+				/>
+			</div>
+
+			<div class="flex justify-between mt-2">
+				<span>Лимит/день: {{ limits.perDay }} / {{ MAX_LIMITS.perDay }}</span>
+				<span>{{ Math.round(perDayPercent) }}%</span>
+			</div>
+
+			<div class="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+				<div
+					class="h-full transition-all"
+					:style="{
+						width: `${perDayPercent}%`,
+						backgroundColor: getProgressColor(perDayPercent),
+					}"
+				/>
+			</div>
+		</div>
+
+		<AuthModal v-model:visible="showAuthModal" @login="handleLogin" />
+	</div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '@/stores/chat'
-
 import { getProviderLimits } from '@/services/llm'
+
 import QRCode from './QrCode.vue'
 import AuthModal from './AuthModal.vue'
 
-type ProviderKey = 'groq' | 'openrouter'
+// PROVIDERS
+const providerList = [
+	{ key: 'groq', name: 'Groq ⚡' },
+	{ key: 'openrouter', name: 'OpenRouter 🌐' },
+] as const
+
+type ProviderKey = (typeof providerList)[number]['key']
+
 const store = useChatStore()
+
+// STATE
+const isProviderOpen = ref(false)
+const isModelOpen = ref(false)
+
+const providerRef = ref<HTMLElement | null>(null)
+const modelRef = ref<HTMLElement | null>(null)
 
 const showAuthModal = ref(false)
 
-const modelValue = computed({
-  get: () => store.selectedModel,
-  set: (v: string) => (store.selectedModel = v),
-})
-
-const selectedProvider = ref<ProviderKey>(store.provider)
-const providerList = [
-  { key: 'groq', name: 'Groq ⚡' },
-  { key: 'openrouter', name: 'OpenRouter 🌐' },
-]
+// 🔧 ИСПРАВЛЕНИЕ 1: Гарантируем, что selectedProvider всегда имеет корректный тип
+const selectedProvider = ref<ProviderKey>(
+	store.provider && providerList.some(p => p.key === store.provider)
+		? store.provider as ProviderKey
+		: 'groq'
+)
 
 const options = computed(() => store.availableModels)
 
-// 🔹 Лимиты
-const limits = ref({ perMinute: Infinity, perDay: Infinity })
-const MAX_LIMITS = { perMinute: 20, perDay: 50 } // можно изменить под реальные значения
-const showLimits = computed(() => selectedProvider.value === 'openrouter')
+// LABELS
+const currentProviderLabel = computed(() => {
+	const provider = providerList.find(p => p.key === selectedProvider.value)
+	return provider?.name || 'Выберите провайдера'
+})
 
-// 🔹 Функции для прогресс-бара
-const perMinutePercent = computed(() =>
-  Math.max(0, Math.min(100, (limits.value.perMinute / MAX_LIMITS.perMinute) * 100)),
-)
-const perDayPercent = computed(() =>
-  Math.max(0, Math.min(100, (limits.value.perDay / MAX_LIMITS.perDay) * 100)),
-)
+const selectedModelLabel = computed(() => {
+	const model = options.value.find(m => m.value === store.selectedModel)
+	return model ? truncate(model.label) : 'Выберите модель'
+})
 
-// Цвета прогресса: зелёный >50%, жёлтый 20–50%, красный <20%
+// ACTIONS
+function toggleProvider() {
+	isProviderOpen.value = !isProviderOpen.value
+	isModelOpen.value = false
+}
+
+function toggleModel() {
+	isModelOpen.value = !isModelOpen.value
+	isProviderOpen.value = false
+}
+
+function selectProvider(p: ProviderKey) {
+	selectedProvider.value = p
+	store.changeProvider(p)
+	isProviderOpen.value = false
+}
+
+function selectModel(model: string) {
+	store.selectedModel = model
+	isModelOpen.value = false
+}
+
+// TRUNCATE
+function truncate(text: string, max = 40) {
+	return text.length > max ? text.slice(0, max) + '…' : text
+}
+
+// 🔧 ИСПРАВЛЕНИЕ 2: Добавляем проверку на undefined для limits
+const limits = computed(() => {
+	const lim = getProviderLimits(selectedProvider.value)
+	return {
+		perMinute: lim?.perMinute ?? 0,
+		perDay: lim?.perDay ?? 0
+	}
+})
+
+// 🔧 ИСПРАВЛЕНИЕ 3: Определяем типы для лимитов
+interface Limits {
+	perMinute: number
+	perDay: number
+}
+
+const MAX_LIMITS = computed<Limits>(() => {
+	if (selectedProvider.value === 'groq') {
+		return { perMinute: 30, perDay: 1000 }
+	}
+	if (selectedProvider.value === 'openrouter') {
+		return { perMinute: 20, perDay: 50 }
+	}
+	return { perMinute: 20, perDay: 50 }
+})
+
+const showLimits = computed(() => {
+	return limits.value.perMinute > 0 || limits.value.perDay > 0
+})
+
+const perMinutePercent = computed(() => {
+	const max = MAX_LIMITS.value.perMinute
+	if (max === 0) return 0
+	return Math.min(100, (limits.value.perMinute / max) * 100)
+})
+
+const perDayPercent = computed(() => {
+	const max = MAX_LIMITS.value.perDay
+	if (max === 0) return 0
+	return Math.min(100, (limits.value.perDay / max) * 100)
+})
+
 function getProgressColor(percent: number) {
-  if (percent > 50) return '#34D399' // зелёный
-  if (percent > 20) return '#FBBF24' // жёлтый
-  return '#F87171' // красный
+	if (percent > 50) return '#34D399'
+	if (percent > 20) return '#FBBF24'
+	return '#F87171'
 }
 
-// Обновляем лимиты
-function updateLimits() {
-  limits.value = getProviderLimits(selectedProvider.value)
+// 🔧 ИСПРАВЛЕНИЕ 4: Улучшаем типизацию getModelStatusIcon
+interface ModelOption {
+	value: string
+	label?: string
 }
 
-// Автообновление каждые 10 секунд
-let intervalId: number | undefined
+function getModelStatusIcon(model: ModelOption): string {
+	if (selectedProvider.value === 'openrouter') {
+		if (limits.value.perMinute <= 0 || limits.value.perDay <= 0) {
+			return '🔴'
+		}
+	}
+	// Проверяем, доступна ли модель
+	const isAvailable = store.availableModels.some(m => m.value === model.value)
+	return isAvailable ? '🟢' : '🔴'
+}
+
+// CLICK OUTSIDE
+function handleClickOutside(e: MouseEvent) {
+	if (providerRef.value && !providerRef.value.contains(e.target as Node)) {
+		isProviderOpen.value = false
+	}
+
+	if (modelRef.value && !modelRef.value.contains(e.target as Node)) {
+		isModelOpen.value = false
+	}
+}
+
+// LIFECYCLE
 onMounted(() => {
-  updateLimits()
-  intervalId = window.setInterval(() => {
-    if (selectedProvider.value === 'openrouter') {
-      updateLimits()
-    }
-  }, 10000)
+	document.addEventListener('click', handleClickOutside)
 })
+
 onUnmounted(() => {
-  if (intervalId) clearInterval(intervalId)
+	document.removeEventListener('click', handleClickOutside)
 })
 
-function onProviderChange() {
-  store.changeProvider(selectedProvider.value)
-  updateLimits()
-}
-
-watch(
-  () => store.provider,
-  (val) => {
-    selectedProvider.value = val
-  },
-)
-
-function isModelActive(model: { value: string; label: string }) {
-  return store.availableModels.some((m) => m.value === model.value)
-}
-
-function getModelStatusIcon(model: { value: string; label: string }) {
-  if (selectedProvider.value === 'openrouter') {
-    if (limits.value.perMinute <= 0 || limits.value.perDay <= 0) return '🔴'
-  }
-  return isModelActive(model) ? '🟢' : '🔴'
-}
-
-const handleLogin = () => {
-  console.log('Пользователь авторизован')
-  // Можно добавить логику после входа
+// LOGIN
+function handleLogin() {
+	console.log('login')
 }
 </script>
 
 <style scoped>
-/* Полоски прогресса уже встроены через inline style, кастомного CSS почти нет */
+.model-select {
+	width: 100%;
+}
+
+/* плавное появление */
+div[role='dropdown'] {
+	animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(-4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
 </style>

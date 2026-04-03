@@ -78,12 +78,11 @@ export const useUserStore = defineStore('user', () => {
   }
 
   // Обновление профиля
-  const updateProfile = (name: string, email: string) => {
+  const updateProfile = (name: string, newEmail: string) => {
     userName.value = name
-    email.value = email
+    email.value = newEmail
     saveToStorage()
   }
-
   // Инициализация
   loadFromStorage()
 

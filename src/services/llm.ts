@@ -36,12 +36,12 @@ class OpenAICompatibleProvider implements LLMProvider {
   private readonly baseUrl: string
   private readonly apiKeys: string[]
   private keyIndex = 0
-  private modelCache: ModelOption[] = []
+  public modelCache: ModelOption[] | null = null // Изменено с private на public
 
   private remainingPerMinute = 20
   private remainingPerDay = 50
-  private lastRequestTimestamp = 0
-  private dayStartTimestamp = Date.now()
+  private lastRequestTimestamp = Date.now()
+  private dayStartTimestamp = this.lastRequestTimestamp
 
   constructor(key: ProviderKey, displayName: string, baseUrl: string, apiKeys: string[]) {
     this.key = key
@@ -54,7 +54,7 @@ class OpenAICompatibleProvider implements LLMProvider {
   private getApiKey(): string {
     const key = this.apiKeys[this.keyIndex]
     this.keyIndex = (this.keyIndex + 1) % this.apiKeys.length
-    return key
+    return key || '' // Возвращаем пустую строку вместо undefined
   }
 
   getLimits(): { perMinute: number; perDay: number } {
@@ -88,7 +88,8 @@ class OpenAICompatibleProvider implements LLMProvider {
   }
 
   async getModels(): Promise<ModelOption[]> {
-    if (this.modelCache.length) return this.modelCache
+    if (this.modelCache) return this.modelCache
+
     try {
       const res = await axios.get(`${this.baseUrl}/models`, {
         headers: { Authorization: `Bearer ${this.getApiKey()}` },
@@ -122,55 +123,64 @@ class OpenAICompatibleProvider implements LLMProvider {
     const finalMaxTokens =
       this.key === 'openrouter' ? Math.min(maxTokens ?? 1024, 1500) : (maxTokens ?? 8192)
 
-    const controller = new AbortController()
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.getApiKey()}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens: finalMaxTokens,
-        stream: true,
-      }),
-      signal: controller.signal,
-    })
+    try {
+      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.getApiKey()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature,
+          max_tokens: finalMaxTokens,
+          stream: true,
+        }),
+      })
 
-    if (!res.ok) {
-      const errText = await res.text()
-      if (this.key === 'openrouter' && res.status === 402) {
-        throw new Error(`OpenRouter лимит токенов: ${errText}`)
+      if (!response.ok) {
+        const errText = await response.text()
+        if (this.key === 'openrouter' && response.status === 402) {
+          throw new Error(`OpenRouter лимит токенов: ${errText}`)
+        }
+        throw new Error(`[${this.displayName}] ${response.status}: ${errText}`)
       }
-      throw new Error(`[${this.displayName}] ${res.status}: ${errText}`)
-    }
 
-    const reader = res.body!.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
 
-      let newlineIdx: number
-      while ((newlineIdx = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, newlineIdx).trim()
-        buffer = buffer.slice(newlineIdx + 1)
-        if (!line.startsWith('data:')) continue
+        buffer += decoder.decode(value, { stream: true })
 
-        const payload = line.slice(5).trim()
-        if (payload === '[DONE]') return
+        let newlineIdx: number
+        while ((newlineIdx = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, newlineIdx).trim()
+          buffer = buffer.slice(newlineIdx + 1)
 
-        try {
-          const json = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] }
-          const content = json.choices?.[0]?.delta?.content
-          if (content) onChunk(content)
-        } catch {}
+          if (!line.startsWith('data:')) continue
+
+          const payload = line.slice(5).trim()
+          if (payload === '[DONE]') return
+
+          try {
+            const json = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] }
+            const content = json.choices?.[0]?.delta?.content
+
+            if (content) onChunk(content)
+          } catch (error) {
+            console.error('Ошибка при декодировании JSON:', error)
+          }
+        }
       }
+    } catch (error) {
+      console.error(`Ошибка в sendStream:`, error)
+      const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
+      throw new Error(`Сбой при отправке данных через ${this.displayName}: ${errorMessage}`)
     }
   }
 }
@@ -191,7 +201,7 @@ let currentProvider: ProviderKey = 'groq'
 
 export function setProvider(p: ProviderKey): void {
   currentProvider = p
-  delete availableModelsCache[p]
+  if (providers[p].modelCache) providers[p].modelCache = null // Очистка кэша моделей
 }
 
 export function getProvider(): OpenAICompatibleProvider {
@@ -200,14 +210,28 @@ export function getProvider(): OpenAICompatibleProvider {
 
 export function getProviderLimits(provider?: ProviderKey): { perMinute: number; perDay: number } {
   const p = provider ? providers[provider] : getProvider()
-  return p.key === 'openrouter' ? p.getLimits() : { perMinute: Infinity, perDay: Infinity }
-}
 
+  if (p.key === 'openrouter') {
+    return p.getLimits()
+  }
+
+  if (p.key === 'groq') {
+    return {
+      perMinute: 30, // пример
+      perDay: 1000,
+    }
+  }
+
+  return { perMinute: Infinity, perDay: Infinity }
+}
 type ModelAlias = 'fast' | 'smart' | 'code'
 const modelMap: Record<ModelAlias, Record<ProviderKey, string>> = {
   fast: { groq: 'llama-3.1-8b-instant', openrouter: 'qwen/qwen2.5-7b-instruct:free' },
   smart: { groq: 'llama-3.3-70b-versatile', openrouter: 'meta-llama/llama-3.3-70b-instruct:free' },
-  code: { groq: 'deepseek-r1-distill-llama-70b', openrouter: 'mistralai/mistral-nemo:free' },
+  code: {
+    groq: 'deepseek-r1-distill-llama-70b',
+    openrouter: 'mistralai/mistral-nemo:free',
+  },
 }
 
 function resolveModel(model: string, provider: ProviderKey): string {
@@ -244,6 +268,7 @@ export async function sendMessageStream(
       lastError = err
     }
   }
+
   throw lastError ?? new Error('Все провайдеры упали')
 }
 
@@ -253,30 +278,30 @@ export async function sendMessage(messages: Message[], model: string): Promise<s
   return result
 }
 
-const availableModelsCache: Record<ProviderKey, ModelOption[]> = {}
+const availableModelsCache: Partial<Record<ProviderKey, ModelOption[]>> = {}
 export async function getAvailableModels(provider?: ProviderKey): Promise<ModelOption[]> {
   const key = provider ?? currentProvider
-  if (availableModelsCache[key]) return availableModelsCache[key]
+  if (availableModelsCache[key]) return availableModelsCache[key] as ModelOption[]
   const models = await providers[key].getModels()
   availableModelsCache[key] = models
   return models
 }
 
-const DEFAULT_FALLBACK_MODELS = [
-  { provider: 'groq' as ProviderKey, model: 'llama-3.3-70b-versatile', name: 'Groq Llama 70B' },
-  { provider: 'groq' as ProviderKey, model: 'llama-3.1-8b-instant', name: 'Groq Llama 8B' },
+const DEFAULT_FALLBACK_MODELS: Array<{ provider: ProviderKey; model: string; name: string }> = [
+  { provider: 'groq', model: 'llama-3.3-70b-versatile', name: 'Groq Llama 70B' },
+  { provider: 'groq', model: 'llama-3.1-8b-instant', name: 'Groq Llama 8B' },
   {
-    provider: 'openrouter' as ProviderKey,
+    provider: 'openrouter',
     model: 'meta-llama/llama-3.3-70b-instruct:free',
     name: 'OpenRouter Llama 70B',
   },
   {
-    provider: 'openrouter' as ProviderKey,
+    provider: 'openrouter',
     model: 'qwen/qwen2.5-7b-instruct:free',
     name: 'OpenRouter Qwen 7B',
   },
   {
-    provider: 'openrouter' as ProviderKey,
+    provider: 'openrouter',
     model: 'mistralai/mistral-nemo:free',
     name: 'OpenRouter Mistral Nemo',
   },
@@ -307,9 +332,7 @@ export function isResponseValid(content: string, minLength: number = 10): boolea
     'норм',
   ]
 
-  if (invalidResponses.includes(trimmed)) return false
-
-  return true
+  return !invalidResponses.includes(trimmed)
 }
 
 export function getFallbackResponse(userInput: string): string {
@@ -319,7 +342,7 @@ export function getFallbackResponse(userInput: string): string {
     `Технические неполадки. Наши инженеры уже работают над исправлением.`,
     `Не могу ответить сейчас. Попробуйте позже или задайте другой вопрос.`,
   ]
-  return responses[Math.floor(Math.random() * responses.length)]
+  return responses[Math.floor(Math.random() * responses.length)] || ''
 }
 
 export async function sendMessageWithGuaranteedResponse(
@@ -387,6 +410,8 @@ export async function sendMessageStreamWithFallback(
 
   for (let i = 0; i < models.length; i++) {
     const modelConfig = models[i]
+    if (!modelConfig) continue // Проверка на undefined
+
     try {
       let response = ''
 

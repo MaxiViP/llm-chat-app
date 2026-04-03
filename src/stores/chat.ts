@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { defineStore } from 'pinia'
 import { ref, onMounted, watch } from 'vue'
 import { sendMessageStream, setProvider, type Message, getAvailableModels } from '@/services/llm'
@@ -10,6 +11,7 @@ interface ModelOption {
 type ProviderKey = 'groq' | 'openrouter'
 
 export const useChatStore = defineStore('chat', () => {
+  /* ---------- Константы & реактивные переменные ---------- */
   const LOCAL_STORAGE_KEY = 'chat_messages'
 
   const messages = ref<Message[]>([
@@ -23,24 +25,55 @@ export const useChatStore = defineStore('chat', () => {
   const isModelsLoading = ref(true)
   const selectedModel = ref<string>('smart')
   const error = ref<string | null>(null)
+
   const availableModels = ref<ModelOption[]>([])
   const provider = ref<ProviderKey>('groq')
+
   const currentFallbackAttempt = ref(0)
   const isLastMessageStreaming = ref(false)
 
+  const userMessageCount = ref(0)
+
+  function pickRandomModel(): { model: string; provider: ProviderKey } {
+    const allModels = [
+      ...cachedRealModels.value.groq.map((m) => ({ ...m, provider: 'groq' as const })),
+      ...cachedRealModels.value.openrouter.map((m) => ({ ...m, provider: 'openrouter' as const })),
+    ]
+
+    if (!allModels.length) {
+      return { model: selectedModel.value, provider: provider.value }
+    }
+
+    // ✅ FIX: добавлен !
+    const random = allModels[Math.floor(Math.random() * allModels.length)]!
+
+    return {
+      model: random.value,
+      provider: random.provider,
+    }
+  }
+  /* ---------- Кеширование реальных моделей ---------- */
   const cachedRealModels = ref<Record<ProviderKey, ModelOption[]>>({
     groq: [],
     openrouter: [],
   })
 
+  /* ---------- Монтирование & подписки ---------- */
   onMounted(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEY)
-    if (saved) {
+    // 1. Попытка загрузить сохранённые сообщения
+    const savedMessages = localStorage.getItem(LOCAL_STORAGE_KEY)
+    if (savedMessages) {
       try {
-        messages.value = JSON.parse(saved)
-      } catch {}
+        messages.value = JSON.parse(savedMessages)
+      } catch (_) {
+        console.error('Не удалось распарсить сохраненные сообщения')
+      }
     }
+
+    // 2. Загрузка списка моделей
     loadAvailableModels()
+
+    // 3. Установка провайдера (по умолчанию groq)
     setProvider(provider.value)
   })
 
@@ -52,9 +85,11 @@ export const useChatStore = defineStore('chat', () => {
     { deep: true },
   )
 
+  /* ---------- Загрузка моделей ---------- */
   async function loadAvailableModels() {
     isModelsLoading.value = true
 
+    // Базовый список
     availableModels.value = [
       { value: 'fast', label: '⚡ Быстрая' },
       { value: 'smart', label: '🧠 Умная' },
@@ -70,19 +105,25 @@ export const useChatStore = defineStore('chat', () => {
           const existingIds = new Set(availableModels.value.map((m) => m.value))
           for (const model of realModels) {
             if (!existingIds.has(model.value)) {
-              availableModels.value.push(model)
+              availableModels.value.push({
+                value: model.value,
+                label: `${model.label}`,
+              })
             }
           }
         }
-      } catch (e) {
-        console.warn(`Не удалось загрузить модели для ${p}`, e)
+      } catch (_) {
+        console.warn(`Не удалось загрузить модели для ${p}`)
       }
     }
 
-    if (!selectedModel.value) selectedModel.value = 'smart'
+    if (!selectedModel.value) {
+      selectedModel.value = 'smart'
+    }
     isModelsLoading.value = false
   }
 
+  /* ---------- Переключение провайдера ---------- */
   async function changeProvider(newProvider: ProviderKey) {
     if (provider.value === newProvider) return
     provider.value = newProvider
@@ -90,63 +131,53 @@ export const useChatStore = defineStore('chat', () => {
     await loadAvailableModels()
   }
 
+  /* ---------- Работа с сообщениями ---------- */
   function addUserMessage(content: string) {
     messages.value.push({ role: 'user', content })
   }
 
-  function createAssistantMessage() {
-    const msg = { role: 'assistant', content: '' } as Message
+  function createAssistantMessage(): Message {
+    const msg: Message = { role: 'assistant', content: '' }
     messages.value.push(msg)
     return msg
   }
 
+  /* ---------- Проверка валидности ответа ---------- */
   function isResponseValid(content: string): boolean {
-    if (!content || content.trim().length === 0) return false
-    if (content.trim().length < 10) return false
+    if (!content || content.trim().length < 10) return false
 
-    const trimmed = content.trim().toLowerCase()
-    const emptyResponses = [
+    const trimmedContent = content.trim().toLowerCase()
+    const invalidResponses = new Set([
       '...',
       '😊',
       '👍',
-      '👌',
       '✅',
       '❌',
-      '🙂',
-      ':)',
-      ':(',
-      ';)',
       'да',
       'нет',
-      'ок',
       'ok',
       'хорошо',
       'плохо',
       'норм',
-    ]
+    ])
 
-    if (emptyResponses.includes(trimmed)) return false
-    return true
+    return !invalidResponses.has(trimmedContent)
   }
 
+  /* ---------- Список резервных моделей ---------- */
   function getFallbackModels(): Array<{ provider: ProviderKey; model: string; name: string }> {
-    const fallbackList: Array<{ provider: ProviderKey; model: string; name: string }> = []
-
-    for (const model of cachedRealModels.value.groq) {
-      fallbackList.push({
-        provider: 'groq',
+    const fallbackList = [
+      ...cachedRealModels.value.groq.map((model) => ({
+        provider: 'groq' as ProviderKey,
         model: model.value,
         name: `Groq: ${model.label}`,
-      })
-    }
-
-    for (const model of cachedRealModels.value.openrouter) {
-      fallbackList.push({
-        provider: 'openrouter',
+      })),
+      ...cachedRealModels.value.openrouter.map((model) => ({
+        provider: 'openrouter' as ProviderKey,
         model: model.value,
         name: `OpenRouter: ${model.label}`,
-      })
-    }
+      })),
+    ]
 
     if (fallbackList.length === 0) {
       return [
@@ -163,24 +194,27 @@ export const useChatStore = defineStore('chat', () => {
     return fallbackList
   }
 
-  function trimHistory(messages: Message[], maxTokens: number = 2500): Message[] {
-    const systemMessages = messages.filter((m) => m.role === 'system')
-    const otherMessages = messages.filter((m) => m.role !== 'system')
+  /* ---------- Обрезка истории по токенам ---------- */
+  function trimHistory(messagesList: Message[], maxTokens = 2500): Message[] {
+    const systemMessages = messagesList.filter((m) => m.role === 'system')
+    const otherMessages = messagesList.filter((m) => m.role !== 'system')
 
     let totalChars = 0
-    const trimmedMessages: Message[] = [...systemMessages]
+    const trimmedMessages = [...systemMessages]
 
     for (let i = otherMessages.length - 1; i >= 0; i--) {
       const msg = otherMessages[i]
-      const charCount = msg.content.length
-      if (totalChars + charCount <= maxTokens * 4) {
+      if (!msg) continue // Проверка на undefined
+
+      if (totalChars + msg.content.length <= maxTokens * 4) {
         trimmedMessages.unshift(msg)
-        totalChars += charCount
+        totalChars += msg.content.length
       } else {
-        if (i < otherMessages.length - 1) {
+        // Добавляем системное предупреждение, если обрезаем
+        if (!trimmedMessages.some((m) => m.role === 'system' && m.content.includes('обрезана'))) {
           trimmedMessages.unshift({
             role: 'system',
-            content: '⚠️ Часть истории была обрезана из-за ограничения по токенам.',
+            content: '⚠️ Часть истории была обрезана из‑за ограничения по токенам.',
           })
         }
         break
@@ -188,27 +222,38 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     console.log(
-      `📊 История обрезана: было ${otherMessages.length} сообщений (${totalChars} символов), осталось ${trimmedMessages.length - systemMessages.length} сообщений`,
+      `📊 История обрезана: ${otherMessages.length} → ${
+        trimmedMessages.length - systemMessages.length
+      } сообщений, ${totalChars} символов`,
     )
     return trimmedMessages
   }
 
+  /* ---------- Отправка с fallback‑логикой ---------- */
   async function tryGetResponseWithFallback(
     historyMessages: Message[],
     onChunk: (chunk: string) => void,
   ): Promise<boolean> {
-    const fallbackModels = getFallbackModels()
+    const fallbackModels = [
+      {
+        provider: provider.value,
+        model: selectedModel.value,
+        name: `Selected: ${selectedModel.value}`,
+      },
+      ...getFallbackModels(),
+    ]
     let lastError: any = null
 
     console.log(`📋 Всего моделей для fallback: ${fallbackModels.length}`)
 
     for (let i = 0; i < fallbackModels.length; i++) {
       const item = fallbackModels[i]
+      if (!item) continue // Проверка на undefined
+
       currentFallbackAttempt.value = i + 1
 
       try {
         console.log(`🚀 Попытка ${i + 1}/${fallbackModels.length}: ${item.name}`)
-
         setProvider(item.provider)
 
         let response = ''
@@ -219,50 +264,68 @@ export const useChatStore = defineStore('chat', () => {
         })
 
         if (isResponseValid(response)) {
-          console.log(`✅ Успешный ответ от ${item.name}, длина: ${response.length} символов`)
+          console.log(`✅ Успешный ответ от ${item.name}, длина: ${response.length}`)
           return true
         } else {
-          console.warn(`⚠️ Ответ от ${item.name} слишком короткий или пустой, пробуем дальше...`)
+          console.warn(`⚠️ Ответ от ${item.name} слишком короткий, пробуем дальше…`)
           onChunk('')
           lastError = new Error('Пустой или слишком короткий ответ')
         }
-      } catch (err: any) {
-        const errorMsg = err.message || ''
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err)
+
         if (errorMsg.includes('429') || errorMsg.includes('rate_limit')) {
-          console.warn(`⏳ Лимит ${item.name}, пробуем следующую...`)
+          console.warn(`⏳ Лимит ${item.name}, пробуем следующую…`)
         } else if (errorMsg.includes('404') || errorMsg.includes('not found')) {
-          console.warn(`❓ Модель ${item.name} не найдена, пробуем следующую...`)
+          console.warn(`❓ Модель ${item.name} не найдена, пробуем следующую…`)
         } else if (errorMsg.includes('413') || errorMsg.includes('too large')) {
-          console.warn(`📦 ${item.name}: запрос слишком большой, пробуем следующую...`)
+          console.warn(`📦 ${item.name}: запрос слишком большой, пробуем следующую…`)
         } else if (errorMsg.includes('402') || errorMsg.includes('tokens')) {
-          console.warn(`💰 ${item.name}: лимит токенов, пробуем следующую...`)
+          console.warn(`💰 ${item.name}: лимит токенов, пробуем следующую…`)
         } else {
-          console.warn(`❌ Ошибка при запросе к ${item.name}:`, errorMsg.substring(0, 100))
+          console.warn(`❌ Ошибка при запросе к ${item.name}:`, errorMsg.slice(0, 100))
         }
+
         lastError = err
         onChunk('')
-        await new Promise((resolve) => setTimeout(resolve, 500))
+        await new Promise((r) => setTimeout(r, 500))
       }
     }
 
-    console.error(`❌ Все ${fallbackModels.length} моделей не дали качественного ответа`)
-    throw lastError || new Error('Ни одна модель не смогла ответить')
+    console.error(`❌ Все ${fallbackModels.length} моделей не дали ответ`)
+    throw lastError ?? new Error('Ни одна модель не смогла ответить')
   }
 
+  /* ---------- Вспомогательный fallback‑текст ---------- */
   function getFallbackResponse(userInput: string): string {
     const responses = [
-      `Извините, в данный момент сервис временно недоступен. Пожалуйста, попробуйте позже. Ваш запрос: "${userInput.slice(0, 50)}${userInput.length > 50 ? '...' : ''}"`,
+      `Извините, в данный момент сервис временно недоступен. Попробуйте позже. Ваш запрос: "${userInput.slice(0, 50)}${userInput.length > 50 ? '...' : ''}"`,
       `К сожалению, не удалось обработать ваш запрос. Пожалуйста, попробуйте переформулировать вопрос или подождите немного.`,
       `Технические неполадки. Наши инженеры уже работают над исправлением. Приносим извинения за неудобства.`,
       `Не могу ответить на ваш вопрос прямо сейчас. Пожалуйста, попробуйте позже или задайте другой вопрос.`,
     ]
-    return responses[Math.floor(Math.random() * responses.length)]
+    return responses[Math.floor(Math.random() * responses.length)] || ''
   }
 
+  /* ---------- Основная функция отправки сообщения ---------- */
   async function sendMessage(userInput: string) {
     if (!userInput.trim() || isLoading.value || !selectedModel.value) return
 
     addUserMessage(userInput)
+
+    // 👇 считаем сообщения
+    userMessageCount.value++
+
+    // 👇 каждые 3 сообщения меняем модель
+    if (userMessageCount.value % 3 === 0) {
+      const random = pickRandomModel()
+
+      selectedModel.value = random.model
+      provider.value = random.provider
+      setProvider(random.provider)
+
+      console.log('🔄 Модель:', random.model, 'провайдер:', random.provider)
+    }
     const assistantMessage = createAssistantMessage()
 
     isLoading.value = true
@@ -271,34 +334,37 @@ export const useChatStore = defineStore('chat', () => {
     currentFallbackAttempt.value = 0
 
     try {
+      // 📦 собираем историю
+      const systemMsg = messages.value.find((m) => m.role === 'system')
       const historyWithoutSystem = messages.value.filter((m) => m.role !== 'system')
-      const systemMessage = messages.value.find((m) => m.role === 'system')
-      const fullHistory = systemMessage
-        ? [systemMessage, ...historyWithoutSystem]
-        : historyWithoutSystem
+      const fullHistory = systemMsg ? [systemMsg, ...historyWithoutSystem] : historyWithoutSystem
 
-      const trimmedHistory = trimHistory(fullHistory, 2500)
+      // ✂️ обрезаем
+      const trimmedHistory = trimHistory(fullHistory)
 
       let fullResponse = ''
 
-      const success = await tryGetResponseWithFallback(trimmedHistory, (chunk) => {
+      await tryGetResponseWithFallback(trimmedHistory, (chunk) => {
         fullResponse += chunk
         assistantMessage.content = fullResponse
       })
 
-      if (!success) {
-        throw new Error('Не удалось получить корректный ответ')
-      }
+      console.log('✅ Ответ получен')
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      console.error('❌ Ошибка при запросе:', errMsg)
 
-      console.log('✅ Успешно получен ответ от модели')
-    } catch (err: any) {
-      console.error('❌ Все модели не смогли ответить:', err)
-      error.value = err.message || 'Не удалось получить ответ'
+      error.value = errMsg || 'Не удалось получить ответ'
 
-      if (err.message?.includes('402') || err.message?.includes('tokens')) {
-        assistantMessage.content = `⚠️ **Превышен лимит токенов**\n\nДиалог слишком длинный для бесплатных моделей. Попробуйте:\n• Начать новый чат (кнопка "Очистить чат")\n• Задать более короткий вопрос\n\nВаш вопрос: "${userInput.slice(0, 100)}${userInput.length > 100 ? '...' : ''}"`
-      } else if (err.message?.includes('429') || err.message?.includes('rate_limit')) {
-        assistantMessage.content = `⏳ **Лимит запросов превышен**\n\nПодождите немного и попробуйте снова.`
+      if (errMsg.includes('402') || errMsg.includes('tokens')) {
+        assistantMessage.content =
+          '⚠️ **Превышен лимит токенов**\n\nДиалог слишком длинный для бесплатных моделей. Попробуйте:\n• Начать новый чат\n• Задать более короткий вопрос\n\nВаш вопрос: "' +
+          userInput.slice(0, 100) +
+          (userInput.length > 100 ? '...' : '') +
+          '"'
+      } else if (errMsg.includes('429') || errMsg.includes('rate_limit')) {
+        assistantMessage.content =
+          '⏳ **Лимит запросов превышен**\n\nПодождите немного и попробуйте снова.'
       } else {
         assistantMessage.content = getFallbackResponse(userInput)
       }
@@ -308,6 +374,7 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /* ---------- Тестирование конкретной модели ---------- */
   async function testModel(testProvider: ProviderKey, model: string): Promise<boolean> {
     try {
       setProvider(testProvider)
@@ -318,11 +385,12 @@ export const useChatStore = defineStore('chat', () => {
       })
 
       return response.trim().length > 0
-    } catch {
+    } catch (_) {
       return false
     }
   }
 
+  /* ---------- Очистка чата ---------- */
   function clearChat() {
     messages.value = [
       {
@@ -334,6 +402,7 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
   }
 
+  /* ---------- Экспорт store ---------- */
   return {
     messages,
     isLoading,
@@ -350,5 +419,12 @@ export const useChatStore = defineStore('chat', () => {
     changeProvider,
     loadAvailableModels,
     testModel,
+
+    // Добавлено для тестирования
+    trimHistory,
+    isResponseValid,
+    getFallbackModels,
+    tryGetResponseWithFallback,
+    cachedRealModels, // только для чтения, но в тестах мы можем его изменять
   }
 })
